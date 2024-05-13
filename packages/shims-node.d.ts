@@ -63,7 +63,9 @@ declare namespace NodeJS {
     UNI_APP_X_SETUP?: string
     UNI_APP_X_UVUE_SCRIPT_ENGINE?: 'native' | 'js'
 
-    UNI_COMPILE_TARGET?: 'uni_modules-encrypt'
+    UNI_COMPILE_TARGET?: 'uni_modules'
+    UNI_COMPILE_CLOUD_DIR?: string
+    UNI_MODULES_ENCRYPT_CACHE_DIR?: string
   }
 }
 

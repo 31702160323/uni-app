@@ -92,7 +92,13 @@ export function initEnv(
     if ((options as BuildOptions).watch) {
       process.env.NODE_ENV = 'development'
     } else {
-      process.env.NODE_ENV = 'production'
+      if (process.env.UNI_COMPILE_TARGET === 'uni_modules') {
+        if (!process.env.NODE_ENV) {
+          process.env.NODE_ENV = 'production'
+        }
+      } else {
+        process.env.NODE_ENV = 'production'
+      }
     }
   }
   if (!options.mode) {
@@ -156,6 +162,24 @@ export function initEnv(
         path.resolve(process.env.UNI_OUTPUT_DIR, options.subpackage)
     }
   }
+  const baseOutDir = path.basename(process.env.UNI_OUTPUT_DIR)
+
+  process.env.UNI_APP_X_CACHE_DIR =
+    process.env.UNI_APP_X_CACHE_DIR ||
+    path.resolve(process.env.UNI_OUTPUT_DIR, '../cache/' + baseOutDir)
+
+  process.env.UNI_MODULES_ENCRYPT_CACHE_DIR = path.resolve(
+    process.env.UNI_APP_X_CACHE_DIR,
+    '.encrypt',
+    process.env.NODE_ENV === 'development' ? 'dev' : 'build',
+    process.env.UNI_UTS_PLATFORM
+  )
+
+  process.env.UNI_COMPILE_CLOUD_DIR = path.resolve(
+    process.env.UNI_APP_X_CACHE_DIR,
+    '.cloud',
+    process.env.NODE_ENV === 'production' ? 'build' : 'dev'
+  )
 
   initAutomator(options)
 

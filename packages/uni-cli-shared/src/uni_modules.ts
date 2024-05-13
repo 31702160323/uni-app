@@ -1,6 +1,7 @@
 // 重要：此文件编译后的js，需同步至 vue2 编译器中 uni-cli-shared/lib/uts/uni_modules.js
 import path from 'path'
 import fs from 'fs-extra'
+import { sync } from 'fast-glob'
 import type { UTSTargetLanguage } from './uts'
 
 export type DefineOptions = {
@@ -375,42 +376,32 @@ export { ${ids.join(',')} }
 `
 }
 
-/**
- * 解析加密的 easyCom 插件列表
- * @param inputDir
- * @returns
- */
-export function parseEncryptEasyComModules(
-  inputDir: string,
-  detectBinary: boolean = true
-) {
+// 目前该函数仅在云端使用（目前仅限iOS/web），云端编译时，提交上来的uni_modules是过滤好的
+export function parseUniModulesWithComponents(inputDir: string) {
   const modulesDir = path.resolve(inputDir, 'uni_modules')
   const uniModules: Record<string, string[]> = {}
   if (fs.existsSync(modulesDir)) {
     fs.readdirSync(modulesDir).forEach((uniModuleDir) => {
-      // 判断是否是加密easyCom插件
-      if (fs.existsSync(path.resolve(modulesDir, uniModuleDir, 'encrypt'))) {
-        const components = parseEncryptEasyComComponents(
-          uniModuleDir,
-          inputDir,
-          detectBinary
-        )
-        if (components.length) {
-          uniModules[uniModuleDir] = components
-        }
+      if (
+        !fs.existsSync(path.resolve(modulesDir, uniModuleDir, 'package.json'))
+      ) {
+        return
       }
+      // 解析加密的 easyCom 插件列表
+      const components = parseEasyComComponents(uniModuleDir, inputDir, false)
+      uniModules[uniModuleDir] = components
     })
   }
   return uniModules
 }
 
 /**
- * 解析加密的 easyCom 组件列表
+ * 解析 easyCom 组件列表
  * @param pluginId
  * @param inputDir
  * @returns
  */
-export function parseEncryptEasyComComponents(
+export function parseEasyComComponents(
   pluginId: string,
   inputDir: string,
   detectBinary = true
@@ -450,4 +441,267 @@ export function parseEncryptEasyComComponents(
     })
   }
   return components
+}
+
+// 查找所有普通加密插件 uni_modules
+export function findEncryptUniModules(inputDir: string, cacheDir: string = '') {
+  const modulesDir = path.resolve(inputDir, 'uni_modules')
+  const uniModules: Record<string, EncryptPackageJson | undefined> = {}
+  if (fs.existsSync(modulesDir)) {
+    fs.readdirSync(modulesDir).forEach((uniModuleDir) => {
+      const uniModuleRootDir = path.resolve(modulesDir, uniModuleDir)
+      if (!fs.existsSync(path.resolve(uniModuleRootDir, 'encrypt'))) {
+        return
+      }
+      // 仅扫描普通加密插件，无需依赖
+      if (fs.existsSync(path.resolve(uniModuleRootDir, 'utssdk'))) {
+        return
+      }
+      const pkg = require(path.resolve(uniModuleRootDir, 'package.json'))
+      uniModules[uniModuleDir] = findEncryptUniModuleCache(
+        uniModuleDir,
+        cacheDir,
+        { version: pkg.version, env: initCheckEnv() }
+      )
+    })
+  }
+  return uniModules
+}
+
+export function findUploadEncryptUniModulesFiles(
+  uniModules: Record<string, EncryptPackageJson | undefined>,
+  platform: typeof process.env.UNI_UTS_PLATFORM,
+  inputDir: string
+) {
+  const files: string[] = []
+  Object.keys(uniModules).forEach((uniModuleId) => {
+    if (!uniModules[uniModuleId]) {
+      files.push(...findUniModuleFiles(platform, uniModuleId, inputDir))
+    }
+  })
+  return files
+}
+
+function packUploadEncryptUniModules(
+  uniModules: Record<string, EncryptPackageJson | undefined>,
+  platform: typeof process.env.UNI_UTS_PLATFORM,
+  inputDir: string,
+  cacheDir: string
+) {
+  const files = findUploadEncryptUniModulesFiles(uniModules, platform, inputDir)
+  if (files.length) {
+    // 延迟 require，避免 vue2 编译器需要安装此依赖，目前该方法仅在 vite 编译器中使用
+    const AdmZip = require('adm-zip')
+    const zip = new AdmZip()
+    files.forEach((file) => {
+      zip.addLocalFile(file)
+    })
+    const zipFile = path.resolve(cacheDir, 'uni_modules.upload.zip')
+    zip.writeZip(zipFile)
+    return zipFile
+  }
+}
+
+function isEnvExpired(
+  value: Record<string, unknown>,
+  other: Record<string, unknown>
+) {
+  const valueKeys = Object.keys(value)
+  const otherKeys = Object.keys(other)
+  if (valueKeys.length !== otherKeys.length) {
+    return true
+  }
+  if (valueKeys.find((name) => value[name] !== other[name])) {
+    return true
+  }
+  return false
+}
+
+interface EncryptPackageJson {
+  id: string
+  version: string
+  uni_modules: {
+    artifacts: {
+      env: {
+        compilerVersion: string
+      } & Record<string, any>
+      apis: string[]
+      components: string[]
+    }
+  }
+}
+
+function findEncryptUniModuleCache(
+  uniModuleId: string,
+  cacheDir: string,
+  options: {
+    version: string
+    env: Record<string, string>
+  }
+): EncryptPackageJson | undefined {
+  if (!cacheDir) {
+    return
+  }
+  const uniModuleCacheDir = path.resolve(cacheDir, 'uni_modules', uniModuleId)
+  if (fs.existsSync(uniModuleCacheDir)) {
+    const pkg = require(path.resolve(uniModuleCacheDir, 'package.json'))
+    // 插件版本以及各种环境一致
+    if (
+      pkg.version === options.version &&
+      !isEnvExpired(pkg.env, options.env)
+    ) {
+      return pkg
+    }
+    // 已过期的插件，删除缓存
+    fs.rmSync(uniModuleCacheDir, { recursive: true })
+  }
+}
+
+const KNOWN_ASSET_TYPES = [
+  // images
+  'png',
+  'jpe?g',
+  'gif',
+  'svg',
+  'ico',
+  'webp',
+  'avif',
+
+  // media
+  'mp4',
+  'webm',
+  'ogg',
+  'mp3',
+  'wav',
+  'flac',
+  'aac',
+
+  // fonts
+  'woff2?',
+  'eot',
+  'ttf',
+  'otf',
+
+  // other
+  'pdf',
+  'txt',
+]
+
+function findUniModuleFiles(
+  platform: typeof process.env.UNI_UTS_PLATFORM,
+  id: string,
+  inputDir: string
+) {
+  return sync(`uni_modules/${id}/**/*`, {
+    cwd: inputDir,
+    ignore: [
+      '**/*.md',
+      ...(platform !== 'app-android' // 非 android 平台不需要扫描 assets
+        ? [`**/*.{${KNOWN_ASSET_TYPES.join(',')}}`]
+        : []),
+    ],
+  })
+}
+
+export function initCheckEnv(): Record<string, string> {
+  return {
+    // 云端编译的版本号不带日期及小版本
+    compilerVersion: process.env.UNI_COMPILER_VERSION,
+  }
+}
+
+function findLastIndex<T>(
+  array: Array<T>,
+  predicate: (value: T, index: number, array: T[]) => unknown
+) {
+  for (let i = array.length - 1; i >= 0; i--) {
+    if (predicate(array[i], i, array)) {
+      return i
+    }
+  }
+  return -1
+}
+
+let encryptUniModules: ReturnType<typeof findEncryptUniModules> = {}
+
+export function resolveEncryptUniModule(
+  id: string,
+  platform: typeof process.env.UNI_UTS_PLATFORM,
+  isX: boolean = true
+) {
+  const parts = id.split('/')
+  const index = findLastIndex(parts, (part) => part === 'uni_modules')
+  if (index !== -1) {
+    const uniModuleId = parts[index + 1]
+    if (uniModuleId in encryptUniModules) {
+      // 原生平台走旧的uts-proxy
+      return `@/uni_modules/${uniModuleId}?${
+        isX && platform === 'app-android' ? 'uts-proxy' : 'uni_helpers'
+      }`
+    }
+  }
+}
+
+export async function checkEncryptUniModules(
+  inputDir: string,
+  params: {
+    mode: 'development' | 'production'
+    compilerVersion: string // hxVersion
+    appid: string
+    appname: string
+    platform: typeof process.env.UNI_UTS_PLATFORM // app-android | app-ios | web
+    'uni-app-x': boolean
+  }
+) {
+  // 扫描加密插件云编译
+  encryptUniModules = findEncryptUniModules(
+    inputDir,
+    process.env.UNI_MODULES_ENCRYPT_CACHE_DIR
+  )
+  if (!Object.keys(encryptUniModules).length) {
+    return {}
+  }
+  if (!process.env.UNI_HBUILDERX_PLUGINS) {
+    return {}
+  }
+
+  const cacheDir = process.env.UNI_MODULES_ENCRYPT_CACHE_DIR!
+  const zipFile = packUploadEncryptUniModules(
+    encryptUniModules,
+    process.env.UNI_UTS_PLATFORM,
+    inputDir,
+    cacheDir
+  )
+  if (zipFile) {
+    const downloadFile = path.resolve(cacheDir, 'uni_modules.download.zip')
+    const { U, D } = require(path.join(
+      process.env.UNI_HBUILDERX_PLUGINS,
+      'uni_helpers'
+    ))
+    try {
+      console.log(
+        await U({
+          ...params,
+        })
+      )
+      const downloadUrl = ''
+
+      await D(downloadUrl, downloadFile)
+      // unzip
+      const AdmZip = require('adm-zip')
+      const zip = new AdmZip(downloadFile)
+      zip.extractAllTo(cacheDir, true)
+      fs.unlinkSync(zipFile)
+      fs.unlinkSync(downloadFile)
+    } catch (e) {
+      fs.existsSync(zipFile) && fs.unlinkSync(zipFile)
+      fs.existsSync(downloadFile) && fs.unlinkSync(downloadFile)
+      console.error(e)
+      process.exit(0)
+    }
+  }
+  encryptUniModules = findEncryptUniModules(
+    inputDir,
+    process.env.UNI_MODULES_ENCRYPT_CACHE_DIR
+  )
 }

@@ -4,7 +4,7 @@ var __publicField = (obj, key, value) => {
   __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
   return value;
 };
-import { withModifiers, createVNode, getCurrentInstance, ref, defineComponent, openBlock, createElementBlock, onMounted, provide, computed, watch, onUnmounted, inject, onBeforeUnmount, mergeProps, injectHook, reactive, onActivated, nextTick, onBeforeMount, withDirectives, vModelDynamic, vShow, shallowRef, watchEffect, isVNode, Fragment, markRaw, Comment, h, createTextVNode, isReactive, Transition, createApp, createBlock, onBeforeActivate, onBeforeDeactivate, renderList, effectScope, withCtx, KeepAlive, resolveDynamicComponent, createElementVNode, normalizeStyle, renderSlot } from "vue";
+import { withModifiers, createVNode, getCurrentInstance, ref, defineComponent, openBlock, createElementBlock, onMounted, provide, computed, watch, onUnmounted, inject, onBeforeUnmount, mergeProps, injectHook, reactive, onActivated, nextTick, onBeforeMount, withDirectives, vShow, shallowRef, watchEffect, isVNode, Fragment, markRaw, Comment, h, createTextVNode, isReactive, Transition, createApp, createBlock, onBeforeActivate, onBeforeDeactivate, renderList, effectScope, withCtx, KeepAlive, resolveDynamicComponent, createElementVNode, normalizeStyle, renderSlot } from "vue";
 import { isArray, isString, extend, remove, stringifyStyle, parseStringStyle, isPlainObject as isPlainObject$1, isFunction, capitalize, camelize, hasOwn, isObject, toRawType, makeMap as makeMap$1, isPromise, hyphenate, invokeArrayFns as invokeArrayFns$1 } from "@vue/shared";
 import { once, UNI_STORAGE_LOCALE, I18N_JSON_DELIMITERS, Emitter, passive, initCustomDatasetOnce, resolveComponentInstance, normalizeStyles, addLeadingSlash, invokeArrayFns, removeLeadingSlash, resolveOwnerVm, resolveOwnerEl, ON_WXS_INVOKE_CALL_METHOD, ON_RESIZE, ON_APP_ENTER_FOREGROUND, ON_APP_ENTER_BACKGROUND, ON_SHOW, ON_HIDE, ON_PAGE_SCROLL, ON_REACH_BOTTOM, EventChannel, SCHEME_RE, DATA_RE, getCustomDataset, ON_ERROR, callOptions, ON_UNHANDLE_REJECTION, ON_PAGE_NOT_FOUND, getLen, LINEFEED, PRIMARY_COLOR, debounce, isUniLifecycleHook, ON_LOAD, UniLifecycleHooks, invokeCreateErrorHandler, invokeCreateVueAppHook, parseQuery, NAVBAR_HEIGHT, ON_UNLOAD, normalizeTitleColor, ON_REACH_BOTTOM_DISTANCE, ON_THEME_CHANGE, decodedQuery, WEB_INVOKE_APPSERVICE, ON_WEB_INVOKE_APP_SERVICE, sortObject, OFF_THEME_CHANGE, updateElementStyle, ON_BACK_PRESS, parseUrl, addFont, ON_NAVIGATION_BAR_CHANGE, scrollTo, RESPONSIVE_MIN_WIDTH, onCreateVueApp, formatDateTime, ON_NAVIGATION_BAR_BUTTON_TAP, ON_NAVIGATION_BAR_SEARCH_INPUT_CLICKED, ON_NAVIGATION_BAR_SEARCH_INPUT_FOCUS_CHANGED, ON_NAVIGATION_BAR_SEARCH_INPUT_CHANGED, ON_NAVIGATION_BAR_SEARCH_INPUT_CONFIRMED, ON_PULL_DOWN_REFRESH } from "@dcloudio/uni-shared";
 import { onCreateVueApp as onCreateVueApp2 } from "@dcloudio/uni-shared";
@@ -9825,7 +9825,7 @@ function throttle(fn, wait) {
 const passiveOptions$1 = /* @__PURE__ */ passive(true);
 const states = [];
 let userInteract = 0;
-let inited;
+let inited = false;
 const setUserAction = (userAction) => states.forEach((vm) => vm.userAction = userAction);
 function addInteractListener(vm = { userAction: false }) {
   if (!inited) {
@@ -10073,6 +10073,7 @@ const emit = [
   ...emit$1
 ];
 function useBase(props2, rootRef, emit2) {
+  var _a;
   const fieldRef = ref(null);
   const trigger = useCustomEvent(rootRef, emit2);
   const selectionStart = computed(() => {
@@ -10093,7 +10094,10 @@ function useBase(props2, rootRef, emit2) {
       return isNaN(maxlength2) || maxlength2 < 0 ? Infinity : Math.floor(maxlength2);
     }
   });
-  const value = getValueString(props2.modelValue, props2.type, maxlength.value) || getValueString(props2.value, props2.type, maxlength.value);
+  let value = "";
+  {
+    value = (_a = getValueString(props2.modelValue, props2.type, maxlength.value)) != null ? _a : getValueString(props2.value, props2.type, maxlength.value);
+  }
   const state2 = reactive({
     value,
     valueOrigin: value,
@@ -10122,9 +10126,12 @@ function useBase(props2, rootRef, emit2) {
   };
 }
 function useValueSync(props2, state2, emit2, trigger) {
-  const valueChangeFn = throttle((val) => {
-    state2.value = getValueString(val, props2.type, state2.maxlength);
-  }, 100);
+  let valueChangeFn = null;
+  {
+    valueChangeFn = throttle((val) => {
+      state2.value = getValueString(val, props2.type, state2.maxlength);
+    }, 100);
+  }
   watch(() => props2.modelValue, valueChangeFn);
   watch(() => props2.value, valueChangeFn);
   const triggerInputFn = throttle((event, detail) => {
@@ -10306,6 +10313,14 @@ const props$r = /* @__PURE__ */ extend({}, props$s, {
     default: ""
   }
 });
+function resolveDigitDecimalPoint(event, cache, state2, input) {
+  if (event.data === ".") {
+    if (cache.value) {
+      cache.value += ".";
+      return false;
+    }
+  }
+}
 class UniInputElement extends UniElement {
   focus(options) {
     var _a;
@@ -10361,7 +10376,7 @@ const Input = /* @__PURE__ */ defineBuiltInComponent({
       scopedAttrsState,
       fixDisabledColor,
       trigger
-    } = useField(props2, rootRef, emit2, (event, state3) => {
+    } = useField(props2, rootRef, emit2, (event, state22) => {
       const input = event.target;
       if (type.value === "number") {
         if (resetCache) {
@@ -10371,45 +10386,37 @@ const Input = /* @__PURE__ */ defineBuiltInComponent({
         if (input.validity && !input.validity.valid) {
           if ((!cache.value || !input.value) && event.data === "-" || cache.value[0] === "-" && event.inputType === "deleteContentBackward") {
             cache.value = "-";
-            state3.value = "";
+            state22.value = "";
             resetCache = () => {
               cache.value = input.value = "";
             };
             input.addEventListener("blur", resetCache);
             return false;
           }
-          if (cache.value) {
-            if (cache.value.indexOf(".") !== -1) {
-              if (event.data !== "." && event.inputType === "deleteContentBackward") {
-                const dotIndex = cache.value.indexOf(".");
-                cache.value = input.value = state3.value = cache.value.slice(0, dotIndex);
-                return true;
-              }
-            } else if (event.data === ".") {
-              cache.value += ".";
-              resetCache = () => {
-                cache.value = input.value = cache.value.slice(0, -1);
-              };
-              input.addEventListener("blur", resetCache);
-              return false;
-            }
-          }
-          cache.value = state3.value = input.value = cache.value === "-" ? "" : cache.value;
+          const res = resolveDigitDecimalPoint(event, cache);
+          if (typeof res === "boolean")
+            return res;
+          cache.value = state22.value = input.value = cache.value === "-" ? "" : cache.value;
           return false;
         } else {
+          const res = resolveDigitDecimalPoint(event, cache);
+          if (typeof res === "boolean")
+            return res;
+          if (cache.value === input.value)
+            return false;
           cache.value = input.value;
         }
-        const maxlength = state3.maxlength;
+        const maxlength = state22.maxlength;
         if (maxlength > 0 && input.value.length > maxlength) {
           input.value = input.value.slice(0, maxlength);
-          state3.value = input.value;
+          state22.value = input.value;
           return false;
         }
       }
     });
     watch(() => state2.value, (value) => {
       if (props2.type === "number" && !(cache.value === "-" && value === "")) {
-        cache.value = value;
+        cache.value = value.toString();
       }
     });
     const NUMBER_TYPES = ["number", "digit"];
@@ -10459,10 +10466,13 @@ const Input = /* @__PURE__ */ defineBuiltInComponent({
           caretColor: props2.cursorColor
         } : {},
         "onFocus": (event) => event.target.blur()
-      }, null, 44, ["value", "readonly", "type", "maxlength", "step", "onFocus"]) : withDirectives(createVNode("input", {
+      }, null, 44, ["value", "readonly", "type", "maxlength", "step", "onFocus"]) : createVNode("input", {
         "key": "input",
         "ref": fieldRef,
-        "onUpdate:modelValue": ($event) => state2.value = $event,
+        "value": state2.value,
+        "onInput": (event) => {
+          state2.value = event.target.value.toString();
+        },
         "disabled": !!props2.disabled,
         "type": type.value,
         "maxlength": state2.maxlength,
@@ -10476,7 +10486,7 @@ const Input = /* @__PURE__ */ defineBuiltInComponent({
         "autocomplete": autocomplete.value,
         "onKeyup": onKeyUpEnter,
         "inputmode": props2.inputmode
-      }, null, 44, ["onUpdate:modelValue", "disabled", "type", "maxlength", "step", "enterkeyhint", "pattern", "autocomplete", "onKeyup", "inputmode"]), [[vModelDynamic, state2.value]]);
+      }, null, 44, ["value", "onInput", "disabled", "type", "maxlength", "step", "enterkeyhint", "pattern", "autocomplete", "onKeyup", "inputmode"]);
       return createVNode("uni-input", {
         "ref": rootRef
       }, [createVNode("div", {
@@ -10484,7 +10494,7 @@ const Input = /* @__PURE__ */ defineBuiltInComponent({
       }, [withDirectives(createVNode("div", mergeProps(scopedAttrsState.attrs, {
         "style": props2.placeholderStyle,
         "class": ["uni-input-placeholder", props2.placeholderClass]
-      }), [props2.placeholder], 16), [[vShow, !(state2.value.length || cache.value === "-")]]), props2.confirmType === "search" ? createVNode("form", {
+      }), [props2.placeholder], 16), [[vShow, !(state2.value.length || cache.value === "-" || cache.value.includes("."))]]), props2.confirmType === "search" ? createVNode("form", {
         "action": "",
         "onSubmit": (event) => event.preventDefault(),
         "class": "uni-input-form"
@@ -13970,7 +13980,7 @@ const Refresher = /* @__PURE__ */ defineBuiltInComponent({
     },
     refresherBackground: {
       type: String,
-      default: "#fff"
+      default: "transparent"
     }
   },
   setup(props2, {
@@ -14113,7 +14123,7 @@ const props$n = {
   },
   refresherBackground: {
     type: String,
-    default: "#fff"
+    default: "transparent"
   },
   refresherTriggered: {
     type: [Boolean, String],
@@ -16206,7 +16216,7 @@ const props$h = {
   },
   refresherBackground: {
     type: String,
-    default: "#fff"
+    default: "transparent"
   },
   refresherTriggered: {
     type: [Boolean, String],
@@ -17354,19 +17364,13 @@ function initPage(vm) {
           case "navigationStyle":
             pageMeta.navigationBar.style = style[key];
             break;
-          case "disableScroll":
-            pageMeta.disableScroll = style[key];
-            break;
-          case "enablePullDownRefresh":
-            pageMeta.enablePullDownRefresh = style[key];
-            break;
-          case "onReachBottomDistance":
-            pageMeta.onReachBottomDistance = style[key];
+          default:
+            pageMeta[key] = style[key];
             break;
         }
       }
     };
-    vm.$getPageStyle = () => ({
+    vm.$getPageStyle = () => new UTSJSONObject({
       navigationBarBackgroundColor: pageMeta.navigationBar.backgroundColor,
       navigationBarTextStyle: pageMeta.navigationBar.titleColor,
       navigationBarTitleText: pageMeta.navigationBar.titleText,
@@ -17374,7 +17378,8 @@ function initPage(vm) {
       navigationStyle: pageMeta.navigationBar.style || "default",
       disableScroll: pageMeta.disableScroll || false,
       enablePullDownRefresh: pageMeta.enablePullDownRefresh || false,
-      onReachBottomDistance: pageMeta.onReachBottomDistance || ON_REACH_BOTTOM_DISTANCE
+      onReachBottomDistance: pageMeta.onReachBottomDistance || ON_REACH_BOTTOM_DISTANCE,
+      backgroundColorContent: pageMeta.backgroundColorContent
     });
   }
   currentPagesMap.set(normalizeRouteKey(page.path, page.id), vm);
@@ -21105,25 +21110,34 @@ const getAppBaseInfo = /* @__PURE__ */ defineSyncApi(
   () => {
     initBrowserInfo();
     const { theme, language, browserName, browserVersion } = browserInfo;
-    return {
-      appId: __uniConfig.appId,
-      appName: __uniConfig.appName,
-      appVersion: __uniConfig.appVersion,
-      appVersionCode: __uniConfig.appVersionCode,
-      appLanguage: getLocale ? getLocale() : language,
-      enableDebug: false,
-      hostSDKVersion: void 0,
-      hostPackageName: void 0,
-      hostFontSizeSetting: void 0,
-      hostName: browserName,
-      hostVersion: browserVersion,
-      hostTheme: theme,
-      hostLanguage: language,
-      language,
-      SDKVersion: "",
-      theme,
-      version: ""
-    };
+    return extend(
+      {
+        appId: __uniConfig.appId,
+        appName: __uniConfig.appName,
+        appVersion: __uniConfig.appVersion,
+        appVersionCode: __uniConfig.appVersionCode,
+        appLanguage: getLocale ? getLocale() : language,
+        enableDebug: false,
+        hostSDKVersion: void 0,
+        hostPackageName: void 0,
+        hostFontSizeSetting: void 0,
+        hostName: browserName,
+        hostVersion: browserVersion,
+        hostTheme: theme,
+        hostLanguage: language,
+        language,
+        SDKVersion: "",
+        theme,
+        version: ""
+      },
+      {
+        uniCompilerVersion: __uniConfig.compilerVersion,
+        uniRuntimeVersion: __uniConfig.compilerVersion,
+        uniCompilerVersionCode: parseFloat(__uniConfig.compilerVersion),
+        uniRuntimeVersionCode: parseFloat(__uniConfig.compilerVersion),
+        isUniAppX: true
+      }
+    );
   }
 );
 const getSystemInfoSync = /* @__PURE__ */ defineSyncApi(
@@ -21749,7 +21763,6 @@ const MIMEType = {
   }
 };
 const ALL = "all";
-addInteractListener();
 function isWXEnv() {
   const ua2 = window.navigator.userAgent.toLowerCase();
   const matchUA = ua2.match(/MicroMessenger/i);
@@ -21761,6 +21774,7 @@ function _createInput({
   type,
   extension
 }) {
+  addInteractListener();
   const inputEl = document.createElement("input");
   inputEl.type = "file";
   updateElementStyle(inputEl, {
@@ -25069,6 +25083,7 @@ const getProvider = /* @__PURE__ */ defineAsyncApi(
   API_GET_PROVIDER,
   createUnsupportedAsyncApi(API_GET_PROVIDER)
 );
+window.UniResizeObserver = window.ResizeObserver;
 const api = /* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   $emit,
@@ -27563,7 +27578,7 @@ const PageBody = /* @__PURE__ */ defineSystemComponent({
   setup(props2, ctx) {
     const pageMeta = __UNI_FEATURE_PULL_DOWN_REFRESH__ && usePageMeta();
     const refreshRef = __UNI_FEATURE_PULL_DOWN_REFRESH__ && ref(null);
-    const _pageRefresh = __UNI_FEATURE_PULL_DOWN_REFRESH__ ? usePageRefresh(refreshRef) : null;
+    const _pageRefresh = __UNI_FEATURE_PULL_DOWN_REFRESH__ && (pageMeta.enablePullDownRefresh || true) ? usePageRefresh(refreshRef) : null;
     const pageRefresh = ref(null);
     watch(() => {
       return pageMeta.enablePullDownRefresh;

@@ -33,7 +33,7 @@ export async function buildSSR(options: CliOptions) {
   const ssrClientDir = path.resolve(outputDir, 'client')
   process.env.UNI_OUTPUT_DIR = ssrClientDir
   const ssrBuildClientOptions: BuildOptions = cleanOptions(options)
-  ssrBuildClientOptions.ssrManifest = true
+  ssrBuildClientOptions.ssrManifest = 'ssr-manifest.json'
   ssrBuildClientOptions.outDir = process.env.UNI_OUTPUT_DIR
   process.env.UNI_SSR_CLIENT = 'true'
   await buildByVite(
@@ -46,6 +46,12 @@ export async function buildSSR(options: CliOptions) {
     process.env.UNI_INPUT_DIR,
     'entry-server.js'
   )
+  // 强制 cjs 输出
+  ssrBuildServerOptions.rollupOptions = {
+    output: {
+      format: 'cjs',
+    },
+  }
   ssrBuildServerOptions.outDir = process.env.UNI_OUTPUT_DIR
   process.env.UNI_SSR_CLIENT = ''
   process.env.UNI_SSR_SERVER = 'true'
@@ -146,6 +152,10 @@ export async function buildApp(
       initBuildOptions(options, cleanOptions(options) as BuildOptions)
     )
   )
+  if (process.env.UNI_COMPILE_TARGET === 'uni_modules') {
+    // 不需要 nvue 编译器
+    return vueBuilder as RollupWatcher
+  }
   if (appWatcher) {
     appWatcher.setFirstWatcher(vueBuilder as RollupWatcher)
   }

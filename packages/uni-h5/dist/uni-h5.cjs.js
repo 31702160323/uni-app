@@ -3299,7 +3299,10 @@ function useBase(props2, rootRef, emit2) {
       return isNaN(maxlength2) ? 140 : maxlength2;
     }
   });
-  const value = getValueString(props2.modelValue, props2.type) || getValueString(props2.value, props2.type);
+  let value = "";
+  {
+    value = getValueString(props2.modelValue, props2.type) || getValueString(props2.value, props2.type);
+  }
   const state = vue.reactive({
     value,
     valueOrigin: value,
@@ -3328,13 +3331,16 @@ function useBase(props2, rootRef, emit2) {
   };
 }
 function useValueSync(props2, state, emit2, trigger) {
-  const valueChangeFn = uniShared.debounce(
-    (val) => {
-      state.value = getValueString(val, props2.type);
-    },
-    100,
-    { setTimeout, clearTimeout }
-  );
+  let valueChangeFn = null;
+  {
+    valueChangeFn = uniShared.debounce(
+      (val) => {
+        state.value = getValueString(val, props2.type);
+      },
+      100,
+      { setTimeout, clearTimeout }
+    );
+  }
   vue.watch(() => props2.modelValue, valueChangeFn);
   vue.watch(() => props2.value, valueChangeFn);
   const triggerInputFn = throttle((event, detail) => {
@@ -3507,6 +3513,14 @@ const props$j = /* @__PURE__ */ shared.extend({}, props$k, {
     default: ""
   }
 });
+function resolveDigitDecimalPoint(event, cache, state, input) {
+  if (event.data === ".") {
+    if (cache.value) {
+      cache.value += ".";
+      return false;
+    }
+  }
+}
 const Input = /* @__PURE__ */ defineBuiltInComponent({
   name: "Input",
   props: props$j,
@@ -3569,25 +3583,17 @@ const Input = /* @__PURE__ */ defineBuiltInComponent({
             input.addEventListener("blur", resetCache);
             return false;
           }
-          if (cache.value) {
-            if (cache.value.indexOf(".") !== -1) {
-              if (event.data !== "." && event.inputType === "deleteContentBackward") {
-                const dotIndex = cache.value.indexOf(".");
-                cache.value = input.value = state2.value = cache.value.slice(0, dotIndex);
-                return true;
-              }
-            } else if (event.data === ".") {
-              cache.value += ".";
-              resetCache = () => {
-                cache.value = input.value = cache.value.slice(0, -1);
-              };
-              input.addEventListener("blur", resetCache);
-              return false;
-            }
-          }
+          const res = resolveDigitDecimalPoint(event, cache);
+          if (typeof res === "boolean")
+            return res;
           cache.value = state2.value = input.value = cache.value === "-" ? "" : cache.value;
           return false;
         } else {
+          const res = resolveDigitDecimalPoint(event, cache);
+          if (typeof res === "boolean")
+            return res;
+          if (cache.value === input.value)
+            return false;
           cache.value = input.value;
         }
         const maxlength = state2.maxlength;
@@ -3600,7 +3606,7 @@ const Input = /* @__PURE__ */ defineBuiltInComponent({
     });
     vue.watch(() => state.value, (value) => {
       if (props2.type === "number" && !(cache.value === "-" && value === "")) {
-        cache.value = value;
+        cache.value = value.toString();
       }
     });
     const NUMBER_TYPES = ["number", "digit"];
@@ -3638,10 +3644,13 @@ const Input = /* @__PURE__ */ defineBuiltInComponent({
           caretColor: props2.cursorColor
         } : {},
         "onFocus": (event) => event.target.blur()
-      }, null, 44, ["value", "readonly", "type", "maxlength", "step", "onFocus"]) : vue.withDirectives(vue.createVNode("input", {
+      }, null, 44, ["value", "readonly", "type", "maxlength", "step", "onFocus"]) : vue.createVNode("input", {
         "key": "input",
         "ref": fieldRef,
-        "onUpdate:modelValue": ($event) => state.value = $event,
+        "value": state.value,
+        "onInput": (event) => {
+          state.value = event.target.value.toString();
+        },
         "disabled": !!props2.disabled,
         "type": type.value,
         "maxlength": state.maxlength,
@@ -3655,7 +3664,7 @@ const Input = /* @__PURE__ */ defineBuiltInComponent({
         "autocomplete": autocomplete.value,
         "onKeyup": onKeyUpEnter,
         "inputmode": props2.inputmode
-      }, null, 44, ["onUpdate:modelValue", "disabled", "type", "maxlength", "step", "enterkeyhint", "pattern", "autocomplete", "onKeyup", "inputmode"]), [[vue.vModelDynamic, state.value]]);
+      }, null, 44, ["value", "onInput", "disabled", "type", "maxlength", "step", "enterkeyhint", "pattern", "autocomplete", "onKeyup", "inputmode"]);
       return vue.createVNode("uni-input", {
         "ref": rootRef
       }, [vue.createVNode("div", {
@@ -3663,7 +3672,7 @@ const Input = /* @__PURE__ */ defineBuiltInComponent({
       }, [vue.withDirectives(vue.createVNode("div", vue.mergeProps(scopedAttrsState.attrs, {
         "style": props2.placeholderStyle,
         "class": ["uni-input-placeholder", props2.placeholderClass]
-      }), [props2.placeholder], 16), [[vue.vShow, !(state.value.length || cache.value === "-")]]), props2.confirmType === "search" ? vue.createVNode("form", {
+      }), [props2.placeholder], 16), [[vue.vShow, !(state.value.length || cache.value === "-" || cache.value.includes("."))]]), props2.confirmType === "search" ? vue.createVNode("form", {
         "action": "",
         "onSubmit": (event) => event.preventDefault(),
         "class": "uni-input-form"
@@ -11450,25 +11459,28 @@ const getAppBaseInfo = /* @__PURE__ */ defineSyncApi(
   () => {
     initBrowserInfo();
     const { theme, language, browserName, browserVersion } = browserInfo;
-    return {
-      appId: __uniConfig.appId,
-      appName: __uniConfig.appName,
-      appVersion: __uniConfig.appVersion,
-      appVersionCode: __uniConfig.appVersionCode,
-      appLanguage: getLocale ? getLocale() : language,
-      enableDebug: false,
-      hostSDKVersion: void 0,
-      hostPackageName: void 0,
-      hostFontSizeSetting: void 0,
-      hostName: browserName,
-      hostVersion: browserVersion,
-      hostTheme: theme,
-      hostLanguage: language,
-      language,
-      SDKVersion: "",
-      theme,
-      version: ""
-    };
+    return shared.extend(
+      {
+        appId: __uniConfig.appId,
+        appName: __uniConfig.appName,
+        appVersion: __uniConfig.appVersion,
+        appVersionCode: __uniConfig.appVersionCode,
+        appLanguage: getLocale ? getLocale() : language,
+        enableDebug: false,
+        hostSDKVersion: void 0,
+        hostPackageName: void 0,
+        hostFontSizeSetting: void 0,
+        hostName: browserName,
+        hostVersion: browserVersion,
+        hostTheme: theme,
+        hostLanguage: language,
+        language,
+        SDKVersion: "",
+        theme,
+        version: ""
+      },
+      {}
+    );
   }
 );
 const getSystemInfoSync = /* @__PURE__ */ defineSyncApi(
