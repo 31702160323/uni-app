@@ -12,7 +12,7 @@ let _initBrowserInfo = true
 
 function initBrowserInfo() {
   if (__NODE_JS__) {
-    //TODO 临时搞一下配合 uniCloud 测试
+    //TODO 配合 uniCloud 测试
     return (browserInfo = {} as BrowserInfo)
   }
   if (!_initBrowserInfo) return
@@ -31,22 +31,32 @@ export const getDeviceInfo = defineSyncApi<typeof uni.getDeviceInfo>(
       system,
       deviceOrientation,
       deviceType,
+      osname,
+      osversion,
     } = browserInfo
 
-    return {
-      brand,
-      deviceBrand,
-      deviceModel,
-      devicePixelRatio: __NODE_JS__ ? 1 : window.devicePixelRatio,
-      deviceId: __NODE_JS__
-        ? Date.now() + '' + Math.floor(Math.random() * 1e7)
-        : deviceId(),
-      deviceOrientation,
-      deviceType,
-      model,
-      platform,
-      system,
-    }
+    return extend(
+      {
+        brand,
+        deviceBrand,
+        deviceModel,
+        devicePixelRatio: __NODE_JS__ ? 1 : window.devicePixelRatio,
+        deviceId: __NODE_JS__
+          ? Date.now() + '' + Math.floor(Math.random() * 1e7)
+          : deviceId(),
+        deviceOrientation,
+        deviceType,
+        model,
+        platform,
+        system,
+      },
+      __X__
+        ? {
+            osName: osname ? osname.toLocaleLowerCase() : undefined,
+            osVersion: osversion,
+          }
+        : {}
+    )
   }
 )
 export const getAppBaseInfo = defineSyncApi<typeof uni.getAppBaseInfo>(

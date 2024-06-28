@@ -109,6 +109,10 @@ export function getInjectComponents() {
   return [...pluginInjectComponents]
 }
 
+function isAppIOS(filename: string) {
+  return normalizePath(filename).includes('/utssdk/app-ios/')
+}
+
 export async function runKotlinProd(
   filename: string,
   {
@@ -119,6 +123,7 @@ export async function runKotlinProd(
     isModule,
     isX,
     isSingleThread,
+    isExtApi,
     hookClass,
     extApis,
     transform,
@@ -127,7 +132,7 @@ export async function runKotlinProd(
   }: RunProdOptions
 ) {
   // 文件有可能是 app-ios 里边的，因为编译到 android 时，为了保证不报错，可能会去读取 ios 下的 uts
-  if (filename.includes('app-ios')) {
+  if (isAppIOS(filename)) {
     return
   }
   const inputDir = process.env.UNI_INPUT_DIR
@@ -141,6 +146,7 @@ export async function runKotlinProd(
     isSingleThread,
     isPlugin,
     isModule,
+    isExtApi,
     extApis,
     transform,
     uniModules,
@@ -257,6 +263,7 @@ export async function runKotlinDev(
     isX,
     isSingleThread,
     isPlugin,
+    isExtApi,
     cacheDir,
     pluginRelativeDir,
     is_uni_modules,
@@ -267,7 +274,7 @@ export async function runKotlinDev(
   }: RunDevOptions
 ): Promise<RunKotlinDevResult | undefined> {
   // 文件有可能是 app-ios 里边的，因为编译到 android 时，为了保证不报错，可能会去读取 ios 下的 uts
-  if (filename.includes('app-ios')) {
+  if (isAppIOS(filename)) {
     return
   }
   const inputDir = process.env.UNI_INPUT_DIR
@@ -280,6 +287,7 @@ export async function runKotlinDev(
     isX,
     isSingleThread,
     isPlugin,
+    isExtApi,
     extApis,
     transform,
     uniModules,
@@ -311,13 +319,7 @@ export async function runKotlinDev(
     if (!compilerServer) {
       throw new Error(`项目使用了uts插件，正在安装 uts Android 运行扩展...`)
     }
-    const {
-      getDefaultJar,
-      getKotlincHome,
-      compile: compileDex,
-      checkDependencies,
-      checkRResources,
-    } = compilerServer
+    const { checkDependencies, checkRResources } = compilerServer
     let deps: string[] = []
     if (checkDependencies) {
       deps = await checkDeps(filename, checkDependencies)
@@ -359,31 +361,24 @@ export async function runKotlinDev(
       ? // 加密插件已经迁移到普通插件目录了，理论上不需要了
         getUniModulesEncryptCacheJars(cacheDir, uniModules) // 加密插件jar
           .concat(getUniModulesCacheJars(cacheDir, uniModules)) // 普通插件jar
-          .concat(getUniModulesJars(outputDir, uniModules)) // cli版本插件jar（没有指定cache的时候）
+          .concat(getUniModulesJars(outputDir, uniModules)) // cli版本插件jar（没有指定cache的时候,也不应该需要了，默认cache目录即可）
       : []
 
-    const options = {
-      pageCount: 0,
-      kotlinc: resolveKotlincArgs(
-        kotlinFiles,
-        jarFile,
-        getKotlincHome(),
-        (isX ? getDefaultJar(2) : getDefaultJar())
-          .concat(extraJars)
-          .concat(depJars)
-      ),
-      d8: resolveD8Args(jarFile),
-      sourceRoot: inputDir,
-      sourceMapPath: resolveSourceMapFile(outputDir, kotlinFile),
-      stderrListener: createStderrListener(
+    const { code, msg } = await compileAndroidDex(
+      isX,
+      compilerServer,
+      kotlinFiles,
+      jarFile,
+      resolveSourceMapFile(outputDir, kotlinFile),
+      extraJars.concat(depJars),
+      createStderrListener(
         outputDir,
         resolveSourceMapPath(),
-        waiting
-      ),
-    }
-    // console.log('dex compile options: ', options)
-    const { code, msg } = await compileDex(options, inputDir)
-    // console.log('dex compile time: ' + (Date.now() - time) + 'ms')
+        waiting,
+        hbuilderFormatter
+      )
+    )
+
     // 等待 stderrListener 执行完毕
     if (waiting.done) {
       await waiting.done
@@ -416,6 +411,36 @@ export async function runKotlinDev(
     //   )} 编译失败`
     // }
   }
+  return result
+}
+
+export async function compileAndroidDex(
+  isX: boolean,
+  compilerServer: KotlinCompilerServer,
+  kotlinFiles: string[],
+  jarFile: string,
+  sourceMapPath: string,
+  depJars: string[],
+  stderrListener: (data: string) => void
+) {
+  const inputDir = process.env.UNI_INPUT_DIR
+  const { getDefaultJar, getKotlincHome, compile: compileDex } = compilerServer
+  const options = {
+    pageCount: 0,
+    kotlinc: resolveKotlincArgs(
+      kotlinFiles,
+      jarFile,
+      getKotlincHome(),
+      (isX ? getDefaultJar(2) : getDefaultJar()).concat(depJars)
+    ),
+    d8: resolveD8Args(jarFile),
+    sourceRoot: inputDir,
+    sourceMapPath,
+    stderrListener,
+  }
+  // console.log('dex compile options: ', options)
+  const result = await compileDex(options, inputDir)
+  // console.log('dex compile time: ' + (Date.now() - time) + 'ms')
   return result
 }
 
@@ -546,6 +571,7 @@ export async function compile(
     isSingleThread,
     isPlugin,
     isModule,
+    isExtApi,
     extApis,
     transform,
     uniModules,
@@ -613,6 +639,7 @@ export async function compile(
       isSingleThread,
       isPlugin,
       isModule,
+      isExtApi,
       outDir: outputDir,
       package: pluginPackage,
       sourceMap: sourceMap ? resolveUTSSourceMapPath() : false,
@@ -817,7 +844,8 @@ function createPluginGlob(plugins?: string[]) {
 export function createStderrListener(
   inputDir: string,
   sourceMapDir: string,
-  waiting: { done: Promise<void> | undefined }
+  waiting: { done: Promise<void> | undefined },
+  format: (msg: MessageSourceLocation) => string
 ) {
   return async function stderrListener(data: any) {
     waiting.done = new Promise(async (resolve) => {
@@ -843,7 +871,7 @@ export function createStderrListener(
               inputDir,
               sourceMapDir,
               replaceTabsWithSpace: true,
-              format: hbuilderFormatter,
+              format,
             })
             if (msg) {
               // 异步输出，保证插件编译失败的日志在他之前输出，不能使用process.nextTick
@@ -873,10 +901,8 @@ export function createStderrListener(
   }
 }
 
-export function kotlinDir(outputDir: string) {
-  return (
-    process.env.UNI_APP_X_CACHE_DIR || path.resolve(outputDir, '../.kotlin')
-  )
+export function kotlinDir(_outputDir: string) {
+  return process.env.UNI_APP_X_CACHE_DIR
 }
 
 function kotlinAARDir(kotlinDir: string) {

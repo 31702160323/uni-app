@@ -138,6 +138,17 @@ function isAnyType(type) {
 function isUTSType(type) {
     return type && type.prototype && type.prototype instanceof UTSType;
 }
+function normalizeGenericValue(value, genericType, isJSONParse = false) {
+    return value == null
+        ? null
+        : isBaseType(genericType) ||
+            isUnknownType(genericType) ||
+            isAnyType(genericType)
+            ? value
+            : genericType === Array
+                ? new Array(...value)
+                : new genericType(value, undefined, isJSONParse);
+}
 class UTSType {
     static get$UTSMetadata$(...args) {
         return {
@@ -175,16 +186,23 @@ class UTSType {
                     super();
                     // @ts-ignore
                     return options.map((item) => {
-                        return item == null
-                            ? null
-                            : isBaseType(generics[0]) ||
-                                isUnknownType(generics[0]) ||
-                                isAnyType(generics[0])
-                                ? item
-                                : generics[0] === Array
-                                    ? new Array(...item)
-                                    : new generics[0](item, undefined, isJSONParse);
+                        return normalizeGenericValue(item, generics[0], isJSONParse);
                     });
+                }
+            };
+        }
+        else if (parent === Map || parent === WeakMap) {
+            return class UTSMap extends UTSType {
+                constructor(options, isJSONParse = false) {
+                    if (options == null || typeof options !== 'object') {
+                        throw new UTSError(`Failed to contruct type, ${options} is not an object`);
+                    }
+                    super();
+                    const obj = new parent();
+                    for (const key in options) {
+                        obj.set(normalizeGenericValue(key, generics[0], isJSONParse), normalizeGenericValue(options[key], generics[1], isJSONParse));
+                    }
+                    return obj;
                 }
             };
         }
@@ -439,26 +457,36 @@ function initUTSJSONObjectProperties(obj) {
     }
     Object.defineProperties(obj, propertyDescriptorMap);
 }
+function setUTSJSONObjectValue(obj, key, value) {
+    if (isPlainObject(value)) {
+        obj[key] = new UTSJSONObject$1(value);
+    }
+    else if (getType(value) === 'array') {
+        obj[key] = value.map((item) => {
+            if (isPlainObject(item)) {
+                return new UTSJSONObject$1(item);
+            }
+            else {
+                return item;
+            }
+        });
+    }
+    else {
+        obj[key] = value;
+    }
+}
 let UTSJSONObject$1 = class UTSJSONObject {
     constructor(content = {}) {
-        for (const key in content) {
-            if (Object.prototype.hasOwnProperty.call(content, key)) {
-                const value = content[key];
-                if (isPlainObject(value)) {
-                    this[key] = new UTSJSONObject(value);
-                }
-                else if (getType(value) === 'array') {
-                    this[key] = value.map((item) => {
-                        if (isPlainObject(item)) {
-                            return new UTSJSONObject(item);
-                        }
-                        else {
-                            return item;
-                        }
-                    });
-                }
-                else {
-                    this[key] = value;
+        if (content instanceof Map) {
+            content.forEach((value, key) => {
+                setUTSJSONObjectValue(this, key, value);
+            });
+        }
+        else {
+            for (const key in content) {
+                if (Object.prototype.hasOwnProperty.call(content, key)) {
+                    const value = content[key];
+                    setUTSJSONObjectValue(this, key, value);
                 }
             }
         }
@@ -616,7 +644,6 @@ let UTSJSONObject$1 = class UTSJSONObject {
 
 // @ts-nocheck
 function getGlobal() {
-    // cross-platform
     if (typeof globalThis !== 'undefined') {
         return globalThis;
     }
@@ -632,9 +659,19 @@ function getGlobal() {
     if (typeof global !== 'undefined') {
         return global;
     }
-    throw new Error('unable to locate global object');
+    function g() {
+        return this;
+    }
+    if (typeof g() !== 'undefined') {
+        return g();
+    }
+    return (function () {
+        return new Function('return this')();
+    })();
 }
 const realGlobal = getGlobal();
 realGlobal.UTSJSONObject = UTSJSONObject$1;
 realGlobal.UniError = UniError;
 realGlobal.UTS = UTS;
+
+export { UTSJSONObject$1 as UTSJSONObject, UniError };

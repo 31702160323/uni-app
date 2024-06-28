@@ -1,6 +1,7 @@
 <template>
     <text class="text">{{ msg }}{{ api }}</text>
-    <video />
+    <image :src="api" />
+    <video src="https://qiniu-web-assets.dcloud.net.cn/video/sample/2minute-demo.mp4" />
 </template>
 <script>
 import Api from './api.png'

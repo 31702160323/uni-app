@@ -3,11 +3,13 @@ import {
   UNI_EASYCOM_EXCLUDE,
   parseUniExtApiNamespacesOnce,
   resolveUTSCompiler,
+  uniDecryptUniModulesPlugin,
   uniEasycomPlugin,
+  uniEncryptUniModulesAssetsPlugin,
   uniEncryptUniModulesPlugin,
   uniHBuilderXConsolePlugin,
+  uniUTSAppUniModulesPlugin,
   uniUTSUVueJavaScriptPlugin,
-  uniUTSUniModulesPlugin,
 } from '@dcloudio/uni-cli-shared'
 
 import { uniAppIOSPlugin } from './plugin'
@@ -19,8 +21,9 @@ import * as uniCliShared from '@dcloudio/uni-cli-shared'
 
 export function init() {
   return [
+    uniDecryptUniModulesPlugin(),
     uniHBuilderXConsolePlugin('uni.__log__'),
-    uniUTSUniModulesPlugin({
+    uniUTSAppUniModulesPlugin({
       x: true,
       isSingleThread: process.env.UNI_APP_X_SINGLE_THREAD !== 'false',
       extApis: parseUniExtApiNamespacesOnce(
@@ -31,17 +34,13 @@ export function init() {
     uniEasycomPlugin({ exclude: UNI_EASYCOM_EXCLUDE }),
     uniAppIOSPlugin(),
     ...(process.env.UNI_COMPILE_TARGET === 'uni_modules'
-      ? [uniEncryptUniModulesPlugin()]
+      ? [uniEncryptUniModulesAssetsPlugin(), uniEncryptUniModulesPlugin()]
       : [uniAppIOSMainPlugin(), uniAppManifestPlugin(), uniAppPagesPlugin()]),
     uniUTSUVueJavaScriptPlugin(),
     resolveUTSCompiler().uts2js({
       inputDir: process.env.UNI_INPUT_DIR,
       version: process.env.UNI_COMPILER_VERSION,
-      cacheRoot: path.resolve(
-        process.env.UNI_APP_X_CACHE_DIR ||
-          path.resolve(process.env.UNI_OUTPUT_DIR, '../.app-ios'),
-        '.uts2js/cache'
-      ),
+      cacheRoot: path.resolve(process.env.UNI_APP_X_CACHE_DIR, '.uts2js/cache'),
       modules: {
         vueCompilerDom,
         uniCliShared,

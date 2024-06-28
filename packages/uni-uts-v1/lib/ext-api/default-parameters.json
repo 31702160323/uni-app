@@ -53,9 +53,29 @@
       "null"
     ]
   },
+  "uni-push": {
+    "setAppBadgeNumber": [
+      null,
+      "null"
+    ]
+  },
   "uni-video": {
     "createVideoContext": [
       null,
+      "null"
+    ]
+  },
+  "uni-createMapContext": {
+    "createMapContext": [
+      null,
+      "null"
+    ]
+  },
+  "uni-compass": {
+    "startCompass": [
+      "null"
+    ],
+    "stopCompass": [
       "null"
     ]
   }

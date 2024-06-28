@@ -8,7 +8,6 @@ import {
   ON_REACH_BOTTOM,
   ON_READY,
   ON_RESIZE,
-  ON_SHOW,
   ON_UNLOAD,
   formatLog,
 } from '@dcloudio/uni-shared'
@@ -25,6 +24,7 @@ import { getVueApp } from '../../../service/framework/app/vueApp'
 import type { VuePageComponent } from '../../../service/framework/page/define'
 import { getPageManager } from '../app/app'
 import { ON_POP_GESTURE } from '../../constants'
+import { getAppThemeFallbackOS, normalizePageStyles } from '../theme'
 
 type PageNodeOptions = {}
 
@@ -39,7 +39,9 @@ export interface RegisterPageOptions {
 }
 
 // parsePageStyle
-function parsePageStyle(route: UniApp.UniRoute): Map<string, any | null> {
+export function parsePageStyle(
+  route: UniApp.UniRoute
+): Map<string, any | null> {
   const style = new Map<string, any | null>()
   const routeMeta = route.meta
   const routeKeys = [
@@ -65,6 +67,13 @@ function parsePageStyle(route: UniApp.UniRoute): Map<string, any | null> {
     'navigationBarTextStyle',
     'navigationStyle',
   ]
+
+  // 替换 dark mode 中的变量
+  normalizePageStyles(
+    routeMeta,
+    __uniConfig.themeConfig,
+    getAppThemeFallbackOS()
+  )
 
   Object.keys(routeMeta).forEach((key) => {
     // 使用黑名单机制兼容后续新增的属性
@@ -143,9 +152,10 @@ export function registerPage(
       nativePage
     ) as ComponentPublicInstance
 
-    nativePage.addPageEventListener(ON_SHOW, (_) => {
-      invokeHook(page, ON_SHOW)
-    })
+    // 由于 iOS 调用 show 时机差异，暂不使用页面 onShow 事件
+    // nativePage.addPageEventListener(ON_SHOW, (_) => {
+    //   invokeHook(page, ON_SHOW)
+    // })
     nativePage.addPageEventListener(ON_POP_GESTURE, function (e) {
       uni.navigateBack({
         from: 'popGesture',

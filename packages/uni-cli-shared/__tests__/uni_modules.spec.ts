@@ -3,6 +3,7 @@ import {
   findEncryptUniModules,
   findUploadEncryptUniModulesFiles,
 } from '../src/uni_modules'
+import { normalizePath } from '../src/utils'
 
 const platforms = ['app-android', 'app-ios', 'web'] as const
 describe('uni_modules:uni-ext-api', () => {
@@ -16,12 +17,18 @@ describe('uni_modules:uni-ext-api', () => {
 
   platforms.forEach((platform) => {
     test(`findUploadEncryptUniModulesFiles(${platform})`, () => {
+      const modules = findUploadEncryptUniModulesFiles(
+        findEncryptUniModules(inputDir),
+        platform,
+        inputDir
+      )
       expect(
-        findUploadEncryptUniModulesFiles(
-          findEncryptUniModules(inputDir),
-          platform,
-          inputDir
-        )
+        Object.keys(modules).reduce((res: string[], id: string) => {
+          res.push(
+            ...modules[id].map((item) => normalizePath(item).split('/src/')[1])
+          )
+          return res
+        }, [])
       ).toMatchSnapshot()
     })
   })
