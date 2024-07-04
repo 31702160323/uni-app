@@ -1,3 +1,4 @@
+import path from 'path'
 import type { SFCBlock, SFCDescriptor } from '@vue/compiler-sfc'
 import type {
   PluginContext,
@@ -19,7 +20,6 @@ import {
   normalizeEmitAssetFileName,
   offsetToStartAndEnd,
   parseUTSComponent,
-  removeExt,
 } from '@dcloudio/uni-cli-shared'
 import type { BindingMetadata, Position } from '@vue/compiler-core'
 import type { ImportSpecifier } from 'es-module-lexer'
@@ -35,8 +35,7 @@ export async function transformMain(
   code: string,
   filename: string,
   options: ResolvedOptions,
-  pluginContext?: TransformPluginContext, // 该 transformMain 方法被vuejs-core使用，编译框架内置组件了，此时不会传入pluginContext
-  isAppVue: boolean = false
+  pluginContext?: TransformPluginContext // 该 transformMain 方法被vuejs-core使用，编译框架内置组件了，此时不会传入pluginContext
 ) {
   if (!options.compiler) {
     options.compiler = require('@vue/compiler-sfc')
@@ -74,7 +73,7 @@ export async function transformMain(
   let templateImportEasyComponentsCode = ''
   let templateImportUTSComponentsCode = ''
 
-  if (!isAppVue) {
+  if (options.componentType !== 'app') {
     // template
     const isInline = !!descriptor.scriptSetup
     const templateResult = genTemplateCode(
@@ -185,14 +184,20 @@ export default {}
   }
 
   // handle TS transpilation
-  const utsCode = utsOutput.join('\n')
+  let utsCode = utsOutput.join('\n')
 
   if (resolvedMap && pluginContext) {
     pluginContext.emitFile({
       type: 'asset',
-      fileName: removeExt(relativeFilename) + '.map',
+      fileName: normalizeEmitAssetFileName(relativeFilename) + '.map',
       source: JSON.stringify(resolvedMap),
     })
+    if (process.env.UNI_APP_X_TSC !== 'true') {
+      utsCode += `
+//# sourceMappingURL=${path.basename(
+        normalizeEmitAssetFileName(relativeFilename)
+      )}.map`
+    }
   }
 
   const jsCodes = [

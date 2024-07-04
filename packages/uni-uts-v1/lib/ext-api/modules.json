@@ -113,7 +113,10 @@
       }
     }
   },
-  "uni-getLocation-system": {
+  "uni-getLocation": {
+    "provider": {
+      "service": "location"
+    },
     "uni": {
       "getLocation": {
         "name": "getLocation",
@@ -123,6 +126,20 @@
           "swift": false
         }
       }
+    }
+  },
+  "uni-getLocation-system": {
+    "provider": {
+      "service": "location",
+      "name": "system",
+      "servicePlugin": "uni-getLocation"
+    }
+  },
+  "uni-getLocation-tencent": {
+    "provider": {
+      "service": "location",
+      "name": "tencent",
+      "servicePlugin": "uni-getLocation"
     }
   },
   "uni-getNetworkType": {
@@ -144,7 +161,26 @@
         "app": {
           "js": false,
           "kotlin": true,
-          "swift": false
+          "swift": false,
+          "arkts": true
+        }
+      },
+      "getProviderIds": {
+        "name": "getProviderIds",
+        "app": {
+          "js": false,
+          "kotlin": true,
+          "swift": false,
+          "arkts": false
+        }
+      },
+      "getProviderObject": {
+        "name": "getProviderObject",
+        "app": {
+          "js": false,
+          "kotlin": true,
+          "swift": false,
+          "arkts": false
         }
       }
     }
@@ -498,7 +534,8 @@
         "app": {
           "js": false,
           "kotlin": true,
-          "swift": true
+          "swift": true,
+          "arkts": true
         }
       },
       "setStorageSync": {
@@ -506,7 +543,8 @@
         "app": {
           "js": false,
           "kotlin": true,
-          "swift": true
+          "swift": true,
+          "arkts": true
         }
       },
       "getStorage": {
@@ -514,7 +552,8 @@
         "app": {
           "js": false,
           "kotlin": true,
-          "swift": true
+          "swift": true,
+          "arkts": true
         }
       },
       "getStorageSync": {
@@ -522,7 +561,8 @@
         "app": {
           "js": false,
           "kotlin": true,
-          "swift": true
+          "swift": true,
+          "arkts": true
         }
       },
       "getStorageInfo": {
@@ -530,7 +570,8 @@
         "app": {
           "js": false,
           "kotlin": true,
-          "swift": true
+          "swift": true,
+          "arkts": true
         }
       },
       "getStorageInfoSync": {
@@ -538,7 +579,8 @@
         "app": {
           "js": false,
           "kotlin": true,
-          "swift": true
+          "swift": true,
+          "arkts": true
         }
       },
       "removeStorage": {
@@ -546,7 +588,8 @@
         "app": {
           "js": false,
           "kotlin": true,
-          "swift": true
+          "swift": true,
+          "arkts": true
         }
       },
       "removeStorageSync": {
@@ -554,7 +597,8 @@
         "app": {
           "js": false,
           "kotlin": true,
-          "swift": true
+          "swift": true,
+          "arkts": true
         }
       },
       "clearStorage": {
@@ -562,7 +606,8 @@
         "app": {
           "js": false,
           "kotlin": true,
-          "swift": true
+          "swift": true,
+          "arkts": true
         }
       },
       "clearStorageSync": {
@@ -570,7 +615,8 @@
         "app": {
           "js": false,
           "kotlin": true,
-          "swift": true
+          "swift": true,
+          "arkts": true
         }
       }
     }
@@ -663,7 +709,7 @@
           "js": false,
           "kotlin": true,
           "swift": false,
-          "arkts": false
+          "arkts": true
         }
       },
       "closeSocket": {
@@ -672,7 +718,7 @@
           "js": false,
           "kotlin": true,
           "swift": false,
-          "arkts": false
+          "arkts": true
         }
       },
       "onSocketOpen": {
@@ -681,7 +727,7 @@
           "js": false,
           "kotlin": true,
           "swift": false,
-          "arkts": false
+          "arkts": true
         }
       },
       "onSocketMessage": {
@@ -690,7 +736,7 @@
           "js": false,
           "kotlin": true,
           "swift": false,
-          "arkts": false
+          "arkts": true
         }
       },
       "onSocketClose": {
@@ -699,7 +745,7 @@
           "js": false,
           "kotlin": true,
           "swift": false,
-          "arkts": false
+          "arkts": true
         }
       },
       "onSocketError": {
@@ -708,7 +754,7 @@
           "js": false,
           "kotlin": true,
           "swift": false,
-          "arkts": false
+          "arkts": true
         }
       }
     }

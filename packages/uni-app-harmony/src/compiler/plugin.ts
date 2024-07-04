@@ -20,6 +20,8 @@ const harmonyGlobals: (string | RegExp)[] = [
   /^@ohos\./,
   /^@kit\./,
   /^@hms\./,
+  /^@arkts\./,
+  /^@system\./,
   '@ohos/hypium',
   '@ohos/hamock',
 ]
@@ -54,6 +56,7 @@ function generateHarmonyImportExternalCode(hamonyPackageNames: string[]) {
           hamonyPackageName
         )} from '${hamonyPackageName}';`
     )
+    .join('')
 }
 
 export function uniAppHarmonyPlugin(): UniVitePlugin {
