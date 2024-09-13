@@ -1,4 +1,4 @@
-import { defineAsyncApi as originalDefineAsyncApi, defineOffApi as originalDefineOffApi, defineOnApi as originalDefineOnApi, defineSyncApi as originalDefineSyncApi, defineTaskApi as originalDefineTaskApi } from "@dcloudio/uni-app-harmony-framework";
+import { defineAsyncApi as originalDefineAsyncApi, defineOffApi as originalDefineOffApi, defineOnApi as originalDefineOnApi, defineSyncApi as originalDefineSyncApi, defineTaskApi as originalDefineTaskApi } from "@dcloudio/uni-mp-sdk";
 interface UniProvider {
     id: string;
     description: string;
@@ -120,11 +120,11 @@ function defineSyncApi<K>(name: string, fn: Function, protocol: Map<string, Prot
     const originalOptions = buildOptions(options as ApiOptions<AsyncMethodOptionLike>);
     return originalDefineSyncApi(name, fn, originalProtocol, originalOptions);
 }
-function defineOnApi<T>(name: string, fn: () => void, options: ApiOptions<T>): Function {
+function defineOnApi<T>(name: string, fn: () => void, options: ApiOptions<T> | null = null): Function {
     const originalOptions = buildOptions(options as ApiOptions<AsyncMethodOptionLike>);
     return originalDefineOnApi(name, fn, originalOptions);
 }
-function defineOffApi<T>(name: string, fn: () => void, options: ApiOptions<T>): Function {
+function defineOffApi<T>(name: string, fn: () => void, options: ApiOptions<T> | null = null): Function {
     const originalOptions = buildOptions(options as ApiOptions<AsyncMethodOptionLike>);
     return originalDefineOffApi(name, fn, originalOptions);
 }

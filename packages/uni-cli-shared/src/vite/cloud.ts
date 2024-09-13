@@ -11,12 +11,18 @@ import {
   genEncryptEasyComModuleIndex,
   initCheckEnv,
   parseUniModulesWithComponents,
-} from '../uni_modules'
+} from '../uni_modules.cloud'
 import { cleanUrl } from './plugins/vitejs/utils'
 import type { CssUrlReplacer } from './plugins/vitejs/plugins/css'
 import { resolveUTSCompiler } from '../uts'
 import { normalizePath } from '../utils'
 import { getUTSEasyComAutoImports } from '../easycom'
+
+import {
+  createAppAndroidUniModulesSyncFilePreprocessorOnce,
+  createAppHarmonyUniModulesSyncFilePreprocessorOnce,
+  createAppIosUniModulesSyncFilePreprocessorOnce,
+} from './plugins/uts/uni_modules'
 
 export function createEncryptCssUrlReplacer(
   resolve: ResolveFn
@@ -132,6 +138,7 @@ export function uniEncryptUniModulesPlugin(): Plugin {
             type: 'asset',
             fileName: pkg,
             name: pkg,
+            originalFileName: null,
             needsCodeReference: false,
             source: genUniModulesPackageJson(
               uniModuleId,
@@ -148,8 +155,30 @@ export function uniEncryptUniModulesPlugin(): Plugin {
       if (process.env.UNI_UTS_PLATFORM !== 'app-android') {
         return
       }
+      const uniXKotlinCompiler =
+        process.env.UNI_APP_X_TSC === 'true'
+          ? resolveUTSCompiler().createUniXKotlinCompilerOnce()
+          : null
+      if (uniXKotlinCompiler) {
+        const tscOutputDir = tscOutDir('app-android')
+        const uniModulesDir = path.resolve(tscOutputDir, 'uni_modules')
+        if (fs.existsSync(uniModulesDir)) {
+          for (const plugin of fs.readdirSync(uniModulesDir)) {
+            const indexFileName = path.join(
+              uniModulesDir,
+              plugin,
+              'index.module.uts.ts'
+            )
+            if (fs.existsSync(indexFileName)) {
+              await uniXKotlinCompiler.addRootFile(indexFileName)
+            }
+          }
+        }
+        await uniXKotlinCompiler.close()
+      }
+
       // 编译所有 uni_modules 插件
-      const tempOutputDir = uvueOutDir()
+      const tempOutputDir = uvueOutDir('app-android')
       const tempUniModulesDir = path.join(tempOutputDir, 'uni_modules')
       const tempUniModules: string[] = []
       if (fs.existsSync(tempUniModulesDir)) {
@@ -166,15 +195,44 @@ export function uniEncryptUniModulesPlugin(): Plugin {
       const compiler = resolveUTSCompiler()
       for (const uniModule of tempUniModules) {
         const pluginDir = path.resolve(tempUniModulesDir, uniModule)
+
+        // TODO 待优化autoImports，目前 uni-app x 的编译，autoImport 是在js层处理过，rust层基本不再使用
+        // 但uts插件目前还是使用的rust层的autoImports
+        const autoImports = {}
+        const allAutoImports = getUTSEasyComAutoImports()
+        Object.keys(allAutoImports).forEach((source) => {
+          if (!source.startsWith(`@/uni_modules/${uniModule}/components/`)) {
+            autoImports[source] = allAutoImports[source]
+          }
+        })
+        const uni_modules: string[] = []
+        const pkgJson = path.resolve(
+          process.env.UNI_INPUT_DIR,
+          'uni_modules',
+          uniModule,
+          'package.json'
+        )
+        if (fs.existsSync(pkgJson)) {
+          try {
+            const pkg = require(pkgJson)
+            if (pkg.uni_modules?.dependencies) {
+              uni_modules.push(...pkg.uni_modules.dependencies)
+            }
+          } catch (e) {
+            console.error(e)
+          }
+        }
+
         const result = await compiler.compile(pluginDir, {
           isX: process.env.UNI_APP_X === 'true',
           isSingleThread: true,
           isPlugin: false,
           sourceMap: false,
-          uni_modules: [],
+          uni_modules,
           transform: {
             uvueClassNamePrefix: 'Gen',
-            autoImports: getUTSEasyComAutoImports(),
+            autoImports,
+            uvueGenDefaultAs: '__sfc__',
           },
         })
         if (result) {
@@ -193,7 +251,7 @@ export function uniEncryptUniModulesPlugin(): Plugin {
               uniModule,
               'package.json'
             ),
-            genUniModulesPackageJson(uniModule, tempOutputDir, {
+            genUniModulesPackageJson(uniModule, process.env.UNI_INPUT_DIR, {
               env: initCheckEnv(),
               apis,
               components,
@@ -207,8 +265,12 @@ export function uniEncryptUniModulesPlugin(): Plugin {
   }
 }
 
-function uvueOutDir() {
-  return path.join(process.env.UNI_OUTPUT_DIR, '../.uvue')
+function tscOutDir(platform: 'app-android' | 'app-ios') {
+  return path.join(process.env.UNI_APP_X_TSC_DIR, platform)
+}
+
+function uvueOutDir(platform: 'app-android' | 'app-ios') {
+  return path.join(process.env.UNI_APP_X_UVUE_DIR, platform)
 }
 
 function createExternal(config: ResolvedConfig) {
@@ -332,6 +394,7 @@ function genUniModulesPackageJson(
       id: pkg.id,
       version: pkg.version,
       uni_modules: {
+        dependencies: pkg.uni_modules?.dependencies || [],
         artifacts,
       },
     },
@@ -366,4 +429,35 @@ export function addUniModulesExtApiComponents(
 
 function getUniModulesExtApiComponents(uniModuleId: string) {
   return [...(uniModulesExtApiComponents.get(uniModuleId) || [])]
+}
+
+export function compileCloudUniModuleWithTsc(
+  platform: 'app-android' | 'app-ios' | 'app-harmony',
+  pluginDir: string
+) {
+  const {
+    compileUniModuleWithTsc,
+    createUniXKotlinCompilerOnce,
+    createUniXSwiftCompilerOnce,
+    createUniXArkTSCompilerOnce,
+  } = resolveUTSCompiler()
+  const isX = process.env.UNI_APP_X === 'true'
+  return compileUniModuleWithTsc(
+    platform,
+    pluginDir,
+    platform === 'app-android'
+      ? createUniXKotlinCompilerOnce()
+      : platform === 'app-harmony'
+      ? createUniXArkTSCompilerOnce()
+      : createUniXSwiftCompilerOnce(),
+    {
+      rootFiles: [],
+      preprocessor:
+        platform === 'app-android'
+          ? createAppAndroidUniModulesSyncFilePreprocessorOnce(isX)
+          : platform === 'app-harmony'
+          ? createAppHarmonyUniModulesSyncFilePreprocessorOnce(isX)
+          : createAppIosUniModulesSyncFilePreprocessorOnce(isX),
+    }
+  )
 }

@@ -235,19 +235,16 @@ function parseApp(instance, parseAppOptions) {
         const methods = vueOptions.methods;
         methods && extend(appOptions, methods);
     }
-    if (parseAppOptions) {
-        parseAppOptions.parse(appOptions);
-    }
     return appOptions;
 }
 function initCreateApp(parseAppOptions) {
     return function createApp(vm) {
-        return App(parseApp(vm, parseAppOptions));
+        return App(parseApp(vm));
     };
 }
 function initCreateSubpackageApp(parseAppOptions) {
     return function createApp(vm) {
-        const appOptions = parseApp(vm, parseAppOptions);
+        const appOptions = parseApp(vm);
         const app = isFunction(getApp) &&
             getApp({
                 allowDefault: true,
@@ -1043,6 +1040,7 @@ function initRelation(mpInstance, detail) {
     }
 }
 function handleLink({ detail: { vuePid, nodeId, webviewId }, }) {
+    var _a, _b, _c;
     const vm = instances[webviewId + '_' + nodeId];
     if (!vm) {
         return;
@@ -1054,7 +1052,13 @@ function handleLink({ detail: { vuePid, nodeId, webviewId }, }) {
     if (!parentVm) {
         parentVm = this.$vm;
     }
-    vm.$.parent = parentVm.$;
+    if ((_c = (_b = (_a = this.$vm) === null || _a === void 0 ? void 0 : _a.$options) === null || _b === void 0 ? void 0 : _b.options) === null || _c === void 0 ? void 0 : _c.virtualHost) {
+        // 抖音小程序下 form 组件开启 virtualHost 出现 infinite loop. see: https://github.com/vuejs/core/blob/32a1433e0debd538c199bde18390bb903b4cde5a/packages/runtime-core/src/componentProps.ts#L227
+        vm.$.parent = null;
+    }
+    else {
+        vm.$.parent = parentVm.$;
+    }
     if (__VUE_OPTIONS_API__) {
         parentVm.$children.push(vm);
         const parent = parentVm.$;

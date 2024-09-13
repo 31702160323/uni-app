@@ -8,6 +8,10 @@ import type { ComponentPublicInstance } from 'vue'
 import { ON_HIDE, ON_SHOW } from '@dcloudio/uni-shared'
 import { registerPage } from '../page'
 import { getAppThemeFallbackOS, normalizeTabBarStyles } from '../theme'
+import {
+  invokeAfterRouteHooks,
+  invokeBeforeRouteHooks,
+} from '../../api/route/performance'
 
 // 存储 callback
 export let onTabBarMidButtonTapCallback: Function[] = []
@@ -31,21 +35,19 @@ function getBorderStyle(borderStyle: string): string {
 // keep borderStyle aliways black/white
 export function fixBorderStyle(tabBarConfig: Map<string, any>) {
   let borderStyle = tabBarConfig.get('borderStyle')
-  if (!isString(borderStyle)) {
-    borderStyle = 'black'
-  }
+  let borderColor = tabBarConfig.get('borderColor')
+  const isBorderColorFilled = isString(borderColor)
 
-  let borderColor = getBorderStyle(borderStyle as string)
+  // 如果设置 borderStyle 做格式化
+  borderStyle = getBorderStyle(borderStyle as string)
+
   // 同时存在 borderColor>borderStyle，前者没有颜色限制，也不做格式化
-  if (
-    tabBarConfig.has('borderColor') &&
-    isString(tabBarConfig.get('borderColor'))
-  ) {
-    borderColor = tabBarConfig.get('borderColor')
-    tabBarConfig.delete('borderColor')
+  if (isBorderColorFilled) {
+    borderStyle = borderColor
   }
 
-  tabBarConfig.set('borderStyle', borderColor)
+  tabBarConfig.set('borderStyle', borderStyle)
+  tabBarConfig.delete('borderColor')
 }
 
 function getTabList() {
@@ -69,6 +71,10 @@ function init() {
   const list = getTabList()
   const style = new Map<string, any | null>()
   style.set('navigationStyle', 'custom')
+  style.set(
+    'pageOrientation',
+    __uniConfig.globalStyle?.pageOrientation ?? 'portrait'
+  )
   const page = getPageManager().createPage('tabBar', 'tabBar', style)
   const document = page.createDocument(
     new NodeData(
@@ -195,8 +201,8 @@ function createTab(
 ): Page {
   registerPage({ url: path, path, query, openType: 'switchTab' })
   callback?.()
-  const page = getCurrentPage() as Page
-  tabBar0!.appendItem(page!.$page.id.toString())
+  const page = (getCurrentPage() as unknown as UniPage).vm
+  tabBar0!.appendItem(page!.$basePage.id.toString())
   return page
 }
 
@@ -269,11 +275,12 @@ export function switchSelect(
   if (tabBar0 === null) {
     init()
   }
-  const currentPage = getCurrentPage() as Page
+  const currentPage = (getCurrentPage() as unknown as UniPage)?.vm
 
-  // const type = currentPage == null ? 'appLaunch' : 'switchTab'
+  const type = currentPage == null ? 'appLaunch' : 'switchTab'
   // 执行beforeRoute
   // invokeArrayFns(beforeRouteHooks, type)
+  invokeBeforeRouteHooks(type)
 
   const pageInfo = getTabPage(getRealPath(path, true), query, rebuild, callback)
   const page = pageInfo.page
@@ -283,7 +290,7 @@ export function switchSelect(
       invokeHook(currentPage!, ON_HIDE)
     }
   }
-  tabBar0!.switchSelect(page!.$page.id.toString(), selected)
+  tabBar0!.switchSelect(page!.$basePage.id.toString(), selected)
 
   // TODO use page show status
   if (shouldShow) {
@@ -294,4 +301,5 @@ export function switchSelect(
 
   // 执行afterRoute
   // invokeArrayFns(afterRouteHooks, type)
+  invokeAfterRouteHooks(type)
 }

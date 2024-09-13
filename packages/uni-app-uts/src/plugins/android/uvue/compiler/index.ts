@@ -1,11 +1,5 @@
 import { extend } from '@vue/shared'
-import {
-  type CompilerError,
-  baseParse,
-  trackSlotScopes,
-  trackVForSlotScopes,
-  transformElement,
-} from '@vue/compiler-core'
+import { type CompilerError, baseParse } from '@vue/compiler-core'
 
 import { isAppUVueNativeTag } from '@dcloudio/uni-shared'
 import {
@@ -43,6 +37,8 @@ import {
   SourceMapConsumer,
   SourceMapGenerator,
 } from 'source-map-js'
+import { trackSlotScopes, trackVForSlotScopes } from './transforms/vSlot'
+import { transformElement } from './transforms/transformElement'
 
 export type TransformPreset = [
   NodeTransform[],
@@ -160,7 +156,7 @@ function mapLines(oldMap: RawSourceMap, newMap: RawSourceMap): RawSourceMap {
 
     const origPosInOldMap = oldMapConsumer.originalPositionFor({
       line: m.originalLine,
-      column: m.originalColumn,
+      column: m.originalColumn ?? 0,
     })
 
     if (origPosInOldMap.source == null) {
@@ -176,7 +172,7 @@ function mapLines(oldMap: RawSourceMap, newMap: RawSourceMap): RawSourceMap {
         line: origPosInOldMap.line, // map line
         // use current column, since the oldMap produced by @vue/compiler-sfc
         // does not
-        column: m.originalColumn,
+        column: m.originalColumn ?? 0,
       },
       source: origPosInOldMap.source,
       name: origPosInOldMap.name,

@@ -14,7 +14,16 @@ import {
   switchSelect,
 } from '../../framework/app/tabBar'
 import type { ComponentPublicInstance } from 'vue'
-import { closePage } from './utils'
+import {
+  closePage,
+  handleBeforeEntryPageRoutes,
+  updateEntryPageIsReady,
+} from './utils'
+import {
+  entryPageState,
+  switchTabPagesBeforeEntryPages,
+} from '../../framework/app'
+import { getCurrentBasePages } from '../../../service/framework/page/getCurrentPages'
 
 export const $switchTab: DefineAsyncApiFn<API_TYPE_SWITCH_TAB> = (
   args,
@@ -22,6 +31,15 @@ export const $switchTab: DefineAsyncApiFn<API_TYPE_SWITCH_TAB> = (
 ) => {
   const { url } = args
   const { path, query } = parseUrl(url)
+  updateEntryPageIsReady(path)
+
+  if (!entryPageState.isReady) {
+    switchTabPagesBeforeEntryPages.push({
+      args,
+      handler: { resolve, reject },
+    })
+    return
+  }
   _switchTab({
     url,
     path,
@@ -29,6 +47,8 @@ export const $switchTab: DefineAsyncApiFn<API_TYPE_SWITCH_TAB> = (
   })
     .then(resolve)
     .catch(reject)
+
+  handleBeforeEntryPageRoutes()
 }
 
 export const switchTab = defineAsyncApi<API_TYPE_SWITCH_TAB>(
@@ -45,7 +65,7 @@ function _switchTab({ url, path, query }: SwitchTabOptions) {
   if (selected == -1) {
     return Promise.reject(`tab ${path} not found`)
   }
-  const pages = getCurrentPages()
+  const pages = getCurrentBasePages()
   switchSelect(selected, path, query)
   for (let index = pages.length - 1; index >= 0; index--) {
     const page = pages[index] as ComponentPublicInstance

@@ -13,28 +13,44 @@ import {
   onMounted,
 } from 'vue'
 import type { VuePageComponent } from './define'
-import { addCurrentPage } from './getCurrentPages'
+import {
+  UniPageImpl,
+  addCurrentPage,
+  getPage$BasePage,
+} from './getCurrentPages'
 
 export function setupPage(component: VuePageComponent) {
   const oldSetup = component.setup
   component.inheritAttrs = false // 禁止继承 __pageId 等属性，避免告警
-  component.setup = (_, ctx) => {
+  component.setup = (props, ctx) => {
     const {
-      attrs: { __pageId, __pagePath, __pageQuery, __pageInstance },
+      attrs: { __pageId, __pagePath, /*__pageQuery,*/ __pageInstance },
     } = ctx
     if (__DEV__) {
       console.log(formatLog(__pagePath as string, 'setup'))
     }
     const instance = getCurrentInstance()!
+    instance.$dialogPages = []
     const pageVm = instance.proxy!
     initPageVm(pageVm, __pageInstance as Page.PageInstance['$page'])
-    addCurrentPage(
-      initScope(
-        __pageId as number,
-        pageVm,
-        __pageInstance as Page.PageInstance['$page']
+    if (__X__) {
+      const uniPage = new UniPageImpl({
+        route: pageVm.$page.route,
+        options: new Map(Object.entries(pageVm.$page.options)),
+        vm: pageVm,
+      })
+      pageVm.$basePage = pageVm.$page as Page.PageInstance['$page']
+      pageVm.$page = uniPage
+    }
+    if (getPage$BasePage(pageVm).openType !== 'openDialogPage') {
+      addCurrentPage(
+        initScope(
+          __pageId as number,
+          pageVm,
+          __pageInstance as Page.PageInstance['$page']
+        )
       )
-    )
+    }
     if (!__X__) {
       onMounted(() => {
         nextTick(() => {
@@ -48,7 +64,7 @@ export function setupPage(component: VuePageComponent) {
       })
     }
     if (oldSetup) {
-      return oldSetup(__pageQuery as any, ctx)
+      return oldSetup(props, ctx)
     }
   }
   return component
@@ -75,14 +91,22 @@ export function initScope(
     })
     Object.defineProperty(vm, '$getPageStyle', {
       get() {
-        // @ts-expect-error TODO fix types by hdx
         return vm.$nativePage!.getPageStyle.bind(vm.$nativePage!)
       },
     })
     Object.defineProperty(vm, '$setPageStyle', {
       get() {
-        // @ts-expect-error TODO fix types by hdx
         return vm.$nativePage!.setPageStyle.bind(vm.$nativePage!)
+      },
+    })
+    Object.defineProperty(vm, 'getDialogPages', {
+      get() {
+        return () => vm.$.$dialogPages
+      },
+    })
+    Object.defineProperty(vm, 'getParentPage', {
+      get() {
+        return () => null
       },
     })
   }

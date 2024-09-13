@@ -11,12 +11,19 @@ import { ENTRY_FILENAME, getUniCloudSpaceList } from './utils'
 const uniCloudSpaceList = getUniCloudSpaceList()
 
 export function uniCloudPlugin(): Plugin {
-  addUTSEasyComAutoImports(
-    normalizePath(
-      path.resolve(resolveComponentsLibPath(), 'unicloud-db', 'index.uts')
-    ),
-    ['mixinDatacom', 'uniCloudMixinDatacom']
-  )
+  if (
+    !(
+      process.env.UNI_COMPILE_TARGET === 'ext-api' &&
+      process.env.UNI_APP_NEXT_WORKSPACE
+    )
+  ) {
+    addUTSEasyComAutoImports(
+      normalizePath(
+        path.resolve(resolveComponentsLibPath(), 'unicloud-db', 'index.uts')
+      ),
+      ['mixinDatacom', 'uniCloudMixinDatacom']
+    )
+  }
   return {
     name: 'uni:app-unicloud',
     apply: 'build',
@@ -29,8 +36,7 @@ export function uniCloudPlugin(): Plugin {
         asset.source =
           asset.source +
           `
-import "io.dcloud.unicloud.InternalUniCloudConfig"
-export class UniCloudConfig extends InternalUniCloudConfig {
+export class UniCloudConfig extends io.dcloud.unicloud.InternalUniCloudConfig {
     override isDev : boolean = ${
       process.env.NODE_ENV === 'development' ? 'true' : 'false'
     }
@@ -48,7 +54,7 @@ export class UniCloudConfig extends InternalUniCloudConfig {
     )}
     override secureNetworkEnable : boolean = false
     override secureNetworkConfig ?: string = ""
-    constructor() {}
+    constructor() { super() }
 }
 `
       }

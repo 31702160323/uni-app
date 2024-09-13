@@ -1,23 +1,28 @@
 import path from 'path'
 import fs from 'fs-extra'
-import type { OutputBundle, PluginContext } from 'rollup'
+import type { ResolvedConfig } from 'vite'
+import { extend, isString } from '@vue/shared'
+import type { ChangeEvent } from 'rollup'
 import {
   type UniVitePlugin,
   buildUniExtApis,
   emptyDir,
-  formatExtApiProviderName,
+  enableSourceMap,
   getCurrentCompiledUTSPlugins,
-  getUTSEasyComAutoImports,
   getUniExtApiProviderRegisters,
+  initUTSKotlinAutoImportsOnce,
+  isNormalCompileTarget,
   normalizeEmitAssetFileName,
-  normalizeNodeModules,
   normalizePath,
+  parseKotlinPackageWithPluginId,
   parseManifestJsonOnce,
   parseUniExtApiNamespacesOnce,
   parseUniModulesArtifacts,
   parseVueRequest,
   resolveMainPathOnce,
   resolveUTSCompiler,
+  tscOutDir,
+  uvueOutDir,
 } from '@dcloudio/uni-cli-shared'
 import {
   DEFAULT_APPID,
@@ -27,8 +32,8 @@ import {
   getUniCloudSpaceList,
   parseImports,
   parseUTSRelativeFilename,
-  tscOutDir,
-  uvueOutDir,
+  transformAutoImport,
+  transformUniCloudMixinDataCom,
 } from './utils'
 import { getOutputManifestJson } from './manifestJson'
 import {
@@ -37,7 +42,6 @@ import {
   getExtApiComponents,
   updateManifestModules,
 } from '../utils'
-import { genClassName } from '../..'
 
 const uniCloudSpaceList = getUniCloudSpaceList()
 
@@ -45,9 +49,10 @@ let isFirst = true
 export function uniAppPlugin(): UniVitePlugin {
   const inputDir = process.env.UNI_INPUT_DIR
   const outputDir = process.env.UNI_OUTPUT_DIR
+  const uniModulesDir = normalizePath(path.resolve(inputDir, 'uni_modules'))
   const mainUTS = resolveMainPathOnce(inputDir)
-  const uvueOutputDir = uvueOutDir()
-  const tscOutputDir = tscOutDir()
+  const uvueOutputDir = uvueOutDir('app-android')
+  const tscOutputDir = tscOutDir('app-android')
 
   const manifestJson = parseManifestJsonOnce(inputDir)
   // 预留一个口子，方便切换测试
@@ -71,6 +76,15 @@ export function uniAppPlugin(): UniVitePlugin {
     }
   }
   emptyTscDir()
+
+  let resolvedConfig: ResolvedConfig
+
+  const uniXKotlinCompiler =
+    process.env.UNI_APP_X_TSC === 'true'
+      ? resolveUTSCompiler().createUniXKotlinCompilerOnce()
+      : null
+  const changedFiles: { fileName: string; event: ChangeEvent }[] = []
+
   return {
     name: 'uni:app-uts',
     apply: 'build',
@@ -79,8 +93,10 @@ export function uniAppPlugin(): UniVitePlugin {
       return {
         base: '/', // 强制 base
         build: {
+          // 手动清理
+          emptyOutDir: false,
           outDir:
-            process.env.UNI_APP_X_TSC === 'true' ? tscOutDir() : uvueOutDir(),
+            process.env.UNI_APP_X_TSC === 'true' ? tscOutputDir : uvueOutputDir,
           lib: {
             // 必须使用 lib 模式
             fileName: 'output',
@@ -126,19 +142,20 @@ export function uniAppPlugin(): UniVitePlugin {
         },
       }
     },
-    configResolved(config) {
+    async configResolved(config) {
       configResolved(config, true)
+      resolvedConfig = config
+      if (uniXKotlinCompiler) {
+        await uniXKotlinCompiler.init()
+      }
     },
     async transform(code, id) {
       const { filename } = parseVueRequest(id)
       if (!filename.endsWith('.uts') && !filename.endsWith('.ts')) {
         if (filename.endsWith('.json')) {
-          const fileName = path.relative(inputDir, id)
           this.emitFile({
             type: 'asset',
-            fileName: normalizeEmitAssetFileName(
-              normalizeFilename(fileName, false)
-            ),
+            fileName: normalizeEmitAssetFileName(normalizeFilename(id, false)),
             source: code,
           })
         }
@@ -147,12 +164,14 @@ export function uniAppPlugin(): UniVitePlugin {
       // 仅处理 uts 文件
       // 忽略 uni-app-uts/lib/automator/index.uts
       if (!filename.includes('uni-app-uts')) {
+        code = (
+          await transformAutoImport(transformUniCloudMixinDataCom(code), id)
+        ).code
         const isMainUTS = normalizePath(id) === mainUTS
-        const fileName = path.relative(inputDir, id)
         this.emitFile({
           type: 'asset',
           fileName: normalizeEmitAssetFileName(
-            normalizeFilename(fileName, isMainUTS)
+            normalizeFilename(id, isMainUTS)
           ),
           source: normalizeCode(code, isMainUTS),
         })
@@ -164,15 +183,71 @@ export function uniAppPlugin(): UniVitePlugin {
       return code
     },
     generateBundle(_, bundle) {
-      if (process.env.UNI_COMPILE_TARGET === 'uni_modules') {
+      if (!isNormalCompileTarget()) {
         return
       }
       // 开发者仅在 script 中引入了 easyCom 类型，但模板里边没用到，此时额外生成一个辅助的.uvue文件
-      checkUTSEasyComAutoImports(inputDir, bundle, this)
+      // checkUTSEasyComAutoImports(inputDir, bundle, this)
+    },
+    watchChange(fileName, change) {
+      if (uniXKotlinCompiler) {
+        // watcher && watcher.watch(3000)
+        fileName = normalizePath(fileName)
+        if (fileName.startsWith(uniModulesDir)) {
+          // 忽略uni_modules uts原生插件中的文件
+          const plugin = fileName.slice(uniModulesDir.length + 1).split('/')[0]
+          if (getCurrentCompiledUTSPlugins().has(plugin)) {
+            return
+          }
+        }
+        changedFiles.push({ fileName, event: change.event })
+      }
     },
     async writeBundle() {
-      if (process.env.UNI_COMPILE_TARGET === 'uni_modules') {
-        return
+      const { compileApp } = resolveUTSCompiler()
+      if (!isNormalCompileTarget()) {
+        if (process.env.UNI_COMPILE_TARGET === 'ext-api') {
+          if (uniXKotlinCompiler) {
+            await uniXKotlinCompiler.addRootFile(
+              path.join(tscOutputDir, 'main.uts.ts')
+            )
+            await uniXKotlinCompiler.close()
+            const res = await compileApp(path.join(uvueOutputDir, 'main.uts'), {
+              pageCount: 0,
+              split: false,
+              disableSplitManifest: process.env.NODE_ENV !== 'development',
+              inputDir: uvueOutputDir,
+              outputDir: outputDir,
+              outFilename: 'components.kt',
+              package: parseKotlinPackageWithPluginId(
+                process.env.UNI_COMPILE_EXT_API_PLUGIN_ID!,
+                true
+              ),
+              sourceMap: false,
+              uni_modules: [process.env.UNI_COMPILE_EXT_API_PLUGIN_ID!],
+              extApiComponents: [],
+              uvueClassNamePrefix: UVUE_CLASS_NAME_PREFIX,
+              transform: {
+                uvueClassNamePrefix: 'Uni',
+                uvueClassNameOnlyBasename: true,
+              },
+            })
+            if (res?.error) {
+              throw res.error
+            }
+          }
+          return
+        }
+      }
+      if (uniXKotlinCompiler) {
+        if (changedFiles.length) {
+          const files = changedFiles.splice(0)
+          await uniXKotlinCompiler.invalidate(files)
+        } else if (isFirst) {
+          await uniXKotlinCompiler.addRootFile(
+            path.join(tscOutputDir, 'main.uts.ts')
+          )
+        }
       }
       let pageCount = 0
       if (isFirst) {
@@ -190,14 +265,6 @@ export function uniAppPlugin(): UniVitePlugin {
       } else {
         process.env.UNI_APP_X_UNICLOUD_OBJECT = 'false'
       }
-      const { compileApp, runUTS2KotlinDev } = resolveUTSCompiler()
-      if (process.env.UNI_APP_X_TSC === 'true') {
-        await runUTS2KotlinDev({
-          inputDir: tscOutputDir,
-          outputDir: uvueOutputDir,
-          normalizeFileName: normalizeNodeModules,
-        })
-      }
       const res = await compileApp(path.join(uvueOutputDir, 'main.uts'), {
         pageCount,
         uniCloudObjectInfo,
@@ -207,9 +274,7 @@ export function uniAppPlugin(): UniVitePlugin {
         outputDir: outputDir,
         package:
           'uni.' + (manifestJson.appid || DEFAULT_APPID).replace(/_/g, ''),
-        sourceMap:
-          process.env.NODE_ENV === 'development' &&
-          process.env.UNI_COMPILE_TARGET !== 'uni_modules',
+        sourceMap: enableSourceMap(),
         uni_modules: [...getCurrentCompiledUTSPlugins()],
         extApis: parseUniExtApiNamespacesOnce(
           process.env.UNI_UTS_PLATFORM,
@@ -217,10 +282,14 @@ export function uniAppPlugin(): UniVitePlugin {
         ),
         extApiComponents: [...getExtApiComponents()],
         uvueClassNamePrefix: UVUE_CLASS_NAME_PREFIX,
-        autoImports: getUTSEasyComAutoImports(),
-        extApiProviders: parseUniExtApiProviders(manifestJson),
+        autoImports: await initUTSKotlinAutoImportsOnce(),
+        extApiProviders: parseUniExtApiProviders(),
         uniModulesArtifacts: parseUniModulesArtifacts(),
+        env: parseProcessEnv(resolvedConfig),
       })
+      if (uniXKotlinCompiler && process.env.NODE_ENV !== 'development') {
+        await uniXKotlinCompiler.close()
+      }
       if (res) {
         if (process.env.NODE_ENV === 'development') {
           const files: string[] = []
@@ -261,10 +330,13 @@ function normalizeFilename(filename: string, isMain = false) {
   if (isMain) {
     return 'main.uts'
   }
-  return parseUTSRelativeFilename(filename)
+  return parseUTSRelativeFilename(filename, process.env.UNI_INPUT_DIR)
 }
 
 function normalizeCode(code: string, isMain = false) {
+  if (!isNormalCompileTarget()) {
+    return code
+  }
   if (!isMain) {
     return code
   }
@@ -278,76 +350,41 @@ export function main(app: IApp) {
     definePageRoutes();
     defineAppConfig();
     ${automatorCode}
-    (createApp()['app'] as VueApp).mount(app);
+    (createApp()['app'] as VueApp).mount(app, ${UVUE_CLASS_NAME_PREFIX}UniApp());
 }
 `
 }
 
-function checkUTSEasyComAutoImports(
-  inputDir: string,
-  bundle: OutputBundle,
-  ctx: PluginContext
-) {
-  const res = getUTSEasyComAutoImports()
-  Object.keys(res).forEach((fileName) => {
-    if (fileName.endsWith('.vue') || fileName.endsWith('.uvue')) {
-      if (fileName.startsWith('@/')) {
-        fileName = fileName.slice(2)
-      }
-      const relativeFileName = parseUTSRelativeFilename(fileName, inputDir)
-      if (
-        !bundle[relativeFileName] &&
-        // tsc 模式带ts后缀
-        !bundle[relativeFileName + '.ts']
-      ) {
-        const className = genClassName(relativeFileName, UVUE_CLASS_NAME_PREFIX)
-        ctx.emitFile({
-          type: 'asset',
-          fileName: normalizeEmitAssetFileName(relativeFileName),
-          source: `function ${className}Render(): any | null { return null }
-const ${className}Styles = []`,
-        })
-      }
-    }
-  })
-  return res
-}
-
-function parseUniExtApiProviders(
-  manifestJson: Record<string, any>
-): [string, string, string][] {
+function parseUniExtApiProviders(): [string, string, string][] {
   const providers: [string, string, string][] = []
   const customProviders = getUniExtApiProviderRegisters()
-  const userModules = manifestJson.app?.distribute?.modules || {}
-  const userModuleNames = Object.keys(userModules)
-  if (userModuleNames.length) {
-    const systemProviders = resolveUTSCompiler().parseExtApiProviders()
-    userModuleNames.forEach((moduleName) => {
-      const systemProvider = systemProviders[moduleName]
-      if (systemProvider) {
-        const userModule = userModules[moduleName]
-        Object.keys(userModule).forEach((providerName) => {
-          if (systemProvider.providers.includes(providerName)) {
-            if (
-              !customProviders.find(
-                (customProvider) =>
-                  customProvider.service === systemProvider.service &&
-                  customProvider.name === providerName
-              )
-            ) {
-              providers.push([
-                systemProvider.service,
-                providerName,
-                formatExtApiProviderName(systemProvider.service, providerName),
-              ])
-            }
-          }
-        })
-      }
-    })
-  }
   customProviders.forEach((provider) => {
     providers.push([provider.service, provider.name, provider.class])
   })
   return providers
+}
+
+function parseProcessEnv(resolvedConfig: ResolvedConfig) {
+  const env: Record<string, unknown> = {}
+  const defines: Record<string, unknown> = {}
+  const userDefines = resolvedConfig.define!
+  Object.keys(userDefines).forEach((key) => {
+    if (key.startsWith('process.env.')) {
+      defines[key.replace('process.env.', '')] = userDefines[key]
+    }
+  })
+  extend(defines, resolvedConfig.env)
+  Object.keys(defines).forEach((key) => {
+    let value = defines[key]
+    if (isString(value)) {
+      try {
+        value = JSON.parse(value)
+      } catch (e: unknown) {}
+    }
+    if (!isString(value)) {
+      value = JSON.stringify(value)
+    }
+    env[key] = value
+  })
+  return env
 }

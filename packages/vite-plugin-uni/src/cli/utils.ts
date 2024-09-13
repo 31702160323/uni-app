@@ -11,6 +11,7 @@ import {
   initModulePaths,
   initPreContext,
   isInHBuilderX,
+  isNormalCompileTarget,
   output,
   parseManifestJsonOnce,
   parseScripts,
@@ -93,7 +94,7 @@ export function initEnv(
     if ((options as BuildOptions).watch) {
       process.env.NODE_ENV = 'development'
     } else {
-      if (process.env.UNI_COMPILE_TARGET === 'uni_modules') {
+      if (!isNormalCompileTarget()) {
         if (!process.env.NODE_ENV) {
           process.env.NODE_ENV = 'production'
         }
@@ -138,14 +139,29 @@ export function initEnv(
   process.env.UNI_PLATFORM = options.platform as UniApp.PLATFORM
 
   if (process.env.UNI_PLATFORM === 'app-harmony') {
-    const manifestJson = parseManifestJsonOnce(process.env.UNI_INPUT_DIR)
-    const projectPath = manifestJson['app-harmony']?.projectPath
-    if (projectPath) {
-      process.env.UNI_APP_HARMONY_PROJECT_PATH = path.resolve(projectPath)
+    if (process.env.UNI_APP_HARMONY_PROJECT_PATH) {
+      // 先通过原始outputDir设置，因为下边会修改原始的outputDir到鸿蒙项目里，而这些临时目录不应该影响到鸿蒙项目
+      process.env.UNI_APP_X_TSC_DIR = path.resolve(
+        process.env.UNI_OUTPUT_DIR,
+        '../.tsc'
+      )
+      process.env.UNI_APP_X_UVUE_DIR = path.resolve(
+        process.env.UNI_OUTPUT_DIR,
+        '../.uvue'
+      )
+      const baseOutDir = path.basename(process.env.UNI_OUTPUT_DIR)
+      process.env.UNI_APP_X_CACHE_DIR =
+        process.env.UNI_APP_X_CACHE_DIR ||
+        path.resolve(process.env.UNI_OUTPUT_DIR, '../cache/.' + baseOutDir)
+
+      process.env.UNI_APP_X_TSC_CACHE_DIR = path.resolve(
+        process.env.UNI_APP_X_CACHE_DIR,
+        `tsc`
+      )
       // 指定了鸿蒙项目根目录
       process.env.UNI_OUTPUT_DIR = path.resolve(
         process.env.UNI_APP_HARMONY_PROJECT_PATH,
-        `entry/src/main/resources/rawfile/apps/HBuilder/www`
+        `entry/src/main/resources/resfile/apps/HBuilder/www`
       )
     }
   }
@@ -182,9 +198,11 @@ export function initEnv(
     process.env.UNI_APP_X_CACHE_DIR ||
     path.resolve(process.env.UNI_OUTPUT_DIR, '../cache/.' + baseOutDir)
 
-  process.env.HX_DEPENDENCIES_DIR =
-    process.env.HX_DEPENDENCIES_DIR ||
-    path.resolve(process.env.UNI_OUTPUT_DIR, '../hx/' + baseOutDir)
+  if (isNormalCompileTarget()) {
+    process.env.HX_DEPENDENCIES_DIR =
+      process.env.HX_DEPENDENCIES_DIR ||
+      path.resolve(process.env.UNI_OUTPUT_DIR, '../hx/' + baseOutDir)
+  }
 
   process.env.UNI_MODULES_ENCRYPT_CACHE_DIR = path.resolve(
     process.env.UNI_APP_X_CACHE_DIR,
@@ -192,6 +210,39 @@ export function initEnv(
     process.env.NODE_ENV === 'development' ? 'dev' : 'build',
     process.env.UNI_UTS_PLATFORM
   )
+
+  // 默认开启 tsc
+  process.env.UNI_APP_X_TSC = 'true'
+  try {
+    // 部分模式下缺少manifest.json，比如内部编译ext-api时
+    const manifestJson = parseManifestJsonOnce(process.env.UNI_INPUT_DIR)
+    // 留个开关
+    if (
+      manifestJson['app']?.['utsCompilerVersion'] === 'v1' ||
+      manifestJson['app-plus']?.['utsCompilerVersion'] === 'v1'
+    ) {
+      process.env.UNI_APP_X_TSC = 'false'
+    }
+  } catch (e) {}
+
+  if (!process.env.UNI_APP_X_TSC_DIR) {
+    process.env.UNI_APP_X_TSC_DIR = path.resolve(
+      process.env.UNI_OUTPUT_DIR,
+      '../.tsc'
+    )
+  }
+  if (!process.env.UNI_APP_X_UVUE_DIR) {
+    process.env.UNI_APP_X_UVUE_DIR = path.resolve(
+      process.env.UNI_OUTPUT_DIR,
+      '../.uvue'
+    )
+  }
+  if (!process.env.UNI_APP_X_TSC_CACHE_DIR) {
+    process.env.UNI_APP_X_TSC_CACHE_DIR = path.resolve(
+      process.env.UNI_APP_X_CACHE_DIR,
+      `tsc`
+    )
+  }
 
   initAutomator(options)
 

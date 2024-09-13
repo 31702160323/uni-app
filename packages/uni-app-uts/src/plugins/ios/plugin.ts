@@ -6,18 +6,22 @@ import {
   buildUniExtApis,
   createEncryptCssUrlReplacer,
   emptyDir,
+  enableSourceMap,
   injectCssPlugin,
   injectCssPostPlugin,
   normalizePath,
   resolveMainPathOnce,
+  tscOutDir,
+  uvueOutDir,
 } from '@dcloudio/uni-cli-shared'
 import { configResolved, createUniOptions } from '../utils'
 import { uniAppCssPlugin } from './css'
-import { enableSourceMap } from '@dcloudio/uni-cli-shared'
 
 export function uniAppIOSPlugin(): UniVitePlugin {
   const inputDir = process.env.UNI_INPUT_DIR
   const outputDir = process.env.UNI_OUTPUT_DIR
+  const uvueOutputDir = uvueOutDir('app-ios')
+  const tscOutputDir = tscOutDir('app-ios')
   // 开始编译时，清空输出目录
   function emptyOutDir() {
     if (fs.existsSync(outputDir)) {
@@ -25,6 +29,18 @@ export function uniAppIOSPlugin(): UniVitePlugin {
     }
   }
   emptyOutDir()
+  function emptyUVueDir() {
+    if (fs.existsSync(uvueOutputDir)) {
+      emptyDir(uvueOutputDir)
+    }
+  }
+  emptyUVueDir()
+  function emptyTscDir() {
+    if (fs.existsSync(tscOutputDir)) {
+      emptyDir(tscOutputDir)
+    }
+  }
+  emptyTscDir()
   return {
     name: 'uni:app-uts',
     apply: 'build',
@@ -33,7 +49,7 @@ export function uniAppIOSPlugin(): UniVitePlugin {
       return {
         base: '/', // 强制 base
         build: {
-          sourcemap: enableSourceMap() ? 'hidden' : false,
+          sourcemap: enableSourceMap(), //enableSourceMap() ? 'hidden' : false,
           emptyOutDir: false,
           assetsInlineLimit: 0,
           rollupOptions: {
@@ -80,15 +96,23 @@ export function uniAppIOSPlugin(): UniVitePlugin {
       const APP_SERVICE_FILENAME_MAP = APP_SERVICE_FILENAME + '.map'
       const appServiceMap = bundle[APP_SERVICE_FILENAME_MAP]
       if (appServiceMap && appServiceMap.type === 'asset') {
-        fs.outputFileSync(
-          path.resolve(
-            process.env.UNI_APP_X_CACHE_DIR,
-            'sourcemap',
-            APP_SERVICE_FILENAME_MAP
-          ),
-          appServiceMap.source
+        const source = JSON.parse(appServiceMap.source as string)
+        source.sourceRoot = normalizePath(inputDir)
+        const newSourceMapFileName = path.resolve(
+          process.env.UNI_APP_X_CACHE_DIR,
+          'sourcemap',
+          APP_SERVICE_FILENAME_MAP
         )
+        fs.outputFileSync(newSourceMapFileName, JSON.stringify(source))
         delete bundle[APP_SERVICE_FILENAME_MAP]
+        const appService = bundle[APP_SERVICE_FILENAME]
+        if (appService && appService.type === 'chunk') {
+          appService.code = appService.code.replace(
+            `//# sourceMappingURL=app-service.js.map`,
+            `//# sourceMappingURL=` +
+              path.relative(process.env.UNI_OUTPUT_DIR, newSourceMapFileName)
+          )
+        }
       }
     },
     async writeBundle() {

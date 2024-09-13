@@ -1,6 +1,80 @@
-import { ref, createVNode, render, injectHook, queuePostFlushCb, getCurrentInstance, onMounted, nextTick, onBeforeUnmount } from 'vue';
-import fs from '@ohos.file.fs';
-import buffer from '@ohos.buffer';
+import { ref, createVNode, render, injectHook, queuePostFlushCb, getCurrentInstance, onMounted, nextTick, onBeforeUnmount, openBlock, createElementBlock, createCommentVNode } from 'vue';
+
+/*
+ * base64-arraybuffer
+ * https://github.com/niklasvh/base64-arraybuffer
+ *
+ * Copyright (c) 2012 Niklas von Hertzen
+ * Licensed under the MIT license.
+ */
+
+
+var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+// Use a lookup table to find the index.
+var lookup = /*#__PURE__*/ (function () {
+  const lookup = new Uint8Array(256);
+  for (var i = 0; i < chars.length; i++) {
+    lookup[chars.charCodeAt(i)] = i;
+  }
+  return lookup
+})();
+
+function encode$2(arraybuffer) {
+  var bytes = new Uint8Array(arraybuffer),
+    i,
+    len = bytes.length,
+    base64 = '';
+
+  for (i = 0; i < len; i += 3) {
+    base64 += chars[bytes[i] >> 2];
+    base64 += chars[((bytes[i] & 3) << 4) | (bytes[i + 1] >> 4)];
+    base64 += chars[((bytes[i + 1] & 15) << 2) | (bytes[i + 2] >> 6)];
+    base64 += chars[bytes[i + 2] & 63];
+  }
+
+  if (len % 3 === 2) {
+    base64 = base64.substring(0, base64.length - 1) + '=';
+  } else if (len % 3 === 1) {
+    base64 = base64.substring(0, base64.length - 2) + '==';
+  }
+
+  return base64
+}
+
+function decode$1(base64) {
+  var bufferLength = base64.length * 0.75,
+    len = base64.length,
+    i,
+    p = 0,
+    encoded1,
+    encoded2,
+    encoded3,
+    encoded4;
+
+  if (base64[base64.length - 1] === '=') {
+    bufferLength--;
+    if (base64[base64.length - 2] === '=') {
+      bufferLength--;
+    }
+  }
+
+  var arraybuffer = new ArrayBuffer(bufferLength),
+    bytes = new Uint8Array(arraybuffer);
+
+  for (i = 0; i < len; i += 4) {
+    encoded1 = lookup[base64.charCodeAt(i)];
+    encoded2 = lookup[base64.charCodeAt(i + 1)];
+    encoded3 = lookup[base64.charCodeAt(i + 2)];
+    encoded4 = lookup[base64.charCodeAt(i + 3)];
+
+    bytes[p++] = (encoded1 << 2) | (encoded2 >> 4);
+    bytes[p++] = ((encoded2 & 15) << 4) | (encoded3 >> 2);
+    bytes[p++] = ((encoded3 & 3) << 6) | (encoded4 & 63);
+  }
+
+  return arraybuffer
+}
 
 /**
 * @vue/shared v3.4.21
@@ -12,6 +86,12 @@ function makeMap(str, expectsLowerCase) {
   return expectsLowerCase ? (val) => set.has(val.toLowerCase()) : (val) => set.has(val);
 }
 const extend = Object.assign;
+const remove = (arr, el) => {
+  const i = arr.indexOf(el);
+  if (i > -1) {
+    arr.splice(i, 1);
+  }
+};
 const hasOwnProperty$1 = Object.prototype.hasOwnProperty;
 const hasOwn$1 = (val, key) => hasOwnProperty$1.call(val, key);
 const isArray = Array.isArray;
@@ -457,7 +537,9 @@ function invokeSuccess(id, name, res) {
 }
 function invokeFail(id, name, errMsg, errRes = {}) {
     const apiErrMsg = name + ':fail' + (errMsg ? ' ' + errMsg : '');
-    delete errRes.errCode;
+    {
+        delete errRes.errCode;
+    }
     let res = extend({ errMsg: apiErrMsg }, errRes);
     return invokeCallback(id, res);
 }
@@ -564,6 +646,30 @@ function defineSyncApi(name, fn, protocol, options) {
 function defineAsyncApi(name, fn, protocol, options) {
     return promisify(name, wrapperAsyncApi(name, fn, ('production' !== 'production') ? protocol : undefined, options));
 }
+
+const API_BASE64_TO_ARRAY_BUFFER = 'base64ToArrayBuffer';
+const Base64ToArrayBufferProtocol = [
+    {
+        name: 'base64',
+        type: String,
+        required: true,
+    },
+];
+const API_ARRAY_BUFFER_TO_BASE64 = 'arrayBufferToBase64';
+const ArrayBufferToBase64Protocol = [
+    {
+        name: 'arrayBuffer',
+        type: [ArrayBuffer, Uint8Array],
+        required: true,
+    },
+];
+
+const base64ToArrayBuffer = defineSyncApi(API_BASE64_TO_ARRAY_BUFFER, (base64) => {
+    return decode$1(base64);
+}, Base64ToArrayBufferProtocol);
+const arrayBufferToBase64 = defineSyncApi(API_ARRAY_BUFFER_TO_BASE64, (arrayBuffer) => {
+    return encode$2(arrayBuffer);
+}, ArrayBufferToBase64Protocol);
 
 /**
  * 简易版systemInfo，主要为upx2px,i18n服务
@@ -7339,8 +7445,6 @@ assign(pako, deflate, inflate, constants);
 
 var pako_1 = pako;
 
-const BASE64_TO_TEMP_FILE_PATH = 'base64ToTempFilePath';
-
 const TABBAR_HEIGHT = 50;
 const ON_REACH_BOTTOM_DISTANCE = 50;
 const I18N_JSON_DELIMITERS = ['%', '%'];
@@ -7354,6 +7458,7 @@ const ON_HIDE = 'onHide';
 //App
 const ON_LAUNCH = 'onLaunch';
 const ON_ERROR = 'onError';
+const ON_KEYBOARD_HEIGHT_CHANGE = 'onKeyboardHeightChange';
 const ON_PAGE_NOT_FOUND = 'onPageNotFound';
 const ON_UNHANDLE_REJECTION = 'onUnhandledRejection';
 const ON_READY = 'onReady';
@@ -7369,6 +7474,7 @@ const ON_NAVIGATION_BAR_BUTTON_TAP = 'onNavigationBarButtonTap';
 // framework
 const ON_APP_ENTER_FOREGROUND = 'onAppEnterForeground';
 const ON_APP_ENTER_BACKGROUND = 'onAppEnterBackground';
+const ON_WXS_INVOKE_CALL_METHOD = 'onWxsInvokeCallMethod';
 
 function isComponentInternalInstance(vm) {
     return !!vm.appContext;
@@ -7426,6 +7532,27 @@ function once(fn, ctx = null) {
         }
         return res;
     });
+}
+function callOptions(options, data) {
+    options = options || {};
+    if (isString(data)) {
+        data = {
+            errMsg: data,
+        };
+    }
+    if (/:ok$/.test(data.errMsg)) {
+        if (isFunction(options.success)) {
+            options.success(data);
+        }
+    }
+    else {
+        if (isFunction(options.fail)) {
+            options.fail(data);
+        }
+    }
+    if (isFunction(options.complete)) {
+        options.complete(data);
+    }
 }
 
 const encode$1 = encodeURIComponent;
@@ -7541,15 +7668,11 @@ function normalizeEventType(type, options) {
     return `on${capitalize(camelize(type))}`;
 }
 class UniEvent {
-    type;
-    bubbles;
-    cancelable;
-    defaultPrevented = false;
-    detail;
-    timeStamp = Date.now();
-    _stop = false;
-    _end = false;
     constructor(type, opts) {
+        this.defaultPrevented = false;
+        this.timeStamp = Date.now();
+        this._stop = false;
+        this._end = false;
         this.type = type;
         this.bubbles = !!opts.bubbles;
         this.cancelable = !!opts.cancelable;
@@ -7577,7 +7700,9 @@ function createUniEvent(evt) {
     return uniEvent;
 }
 class UniEventTarget {
-    listeners = Object.create(null);
+    constructor() {
+        this.listeners = Object.create(null);
+    }
     dispatchEvent(evt) {
         const listeners = this.listeners[evt.type];
         if (!listeners) {
@@ -7655,16 +7780,11 @@ function checkNodeId(node) {
 }
 // 为优化性能，各平台不使用proxy来实现node的操作拦截，而是直接通过pageNode定制
 class UniNode extends UniEventTarget {
-    nodeId;
-    nodeType;
-    nodeName;
-    childNodes;
-    pageNode = null;
-    parentNode = null;
-    __vueParentComponent;
-    _text = null;
     constructor(nodeType, nodeName, container) {
         super();
+        this.pageNode = null;
+        this.parentNode = null;
+        this._text = null;
         if (container) {
             const { pageNode } = container;
             if (pageNode) {
@@ -7774,10 +7894,23 @@ const ACTION_TYPE_ADD_WXS_EVENT = 12;
 const ACTION_TYPE_PAGE_SCROLL = 15;
 const ACTION_TYPE_EVENT = 20;
 
+/**
+ * 需要手动传入 timer,主要是解决 App 平台的定制 timer
+ */
+function debounce(fn, delay, { clearTimeout, setTimeout }) {
+    let timeout;
+    const newFn = function () {
+        clearTimeout(timeout);
+        const timerFn = () => fn.apply(this, arguments);
+        timeout = setTimeout(timerFn, delay);
+    };
+    newFn.cancel = function () {
+        clearTimeout(timeout);
+    };
+    return newFn;
+}
+
 class EventChannel {
-    id;
-    listener;
-    emitCache;
     constructor(id, events) {
         this.id = id;
         this.listener = {};
@@ -7940,7 +8073,7 @@ function resolveStringStyleItem(modeStyle, styleItem, key) {
 function normalizeStyles(pageStyle, themeConfig = {}, mode = 'light') {
     const modeStyle = themeConfig[mode];
     const styles = {};
-    if (typeof modeStyle === 'undefined')
+    if (typeof modeStyle === 'undefined' || !pageStyle)
         return pageStyle;
     Object.keys(pageStyle).forEach((key) => {
         const styleItem = pageStyle[key]; // Object Array String
@@ -7984,10 +8117,11 @@ const env = {
     CACHE_PATH: '',
 };
 function initEnv() {
-    const context = getContext();
-    env.USER_DATA_PATH = context.filesDir;
-    env.TEMP_PATH = context.tempDir;
-    env.CACHE_PATH = context.cacheDir;
+    // @ts-expect-error getEnv for plus
+    const plusIoEnv = plus.io.getEnv();
+    env.USER_DATA_PATH = plusIoEnv.USER_DATA_PATH;
+    env.TEMP_PATH = plusIoEnv.TEMP_PATH;
+    env.CACHE_PATH = plusIoEnv.CACHE_PATH;
     return env;
 }
 const initEnvOnce = once(initEnv);
@@ -7998,7 +8132,6 @@ function getEnv() {
 const isObject = (val) => val !== null && typeof val === 'object';
 const defaultDelimiters = ['{', '}'];
 class BaseFormatter {
-    _caches;
     constructor() {
         this._caches = Object.create(null);
     }
@@ -8134,13 +8267,12 @@ function normalizeLocale(locale, messages) {
     }
 }
 class I18n {
-    locale = LOCALE_EN;
-    fallbackLocale = LOCALE_EN;
-    message = {};
-    messages = {};
-    watchers = [];
-    formater;
     constructor({ locale, fallbackLocale, messages, watcher, formater, }) {
+        this.locale = LOCALE_EN;
+        this.fallbackLocale = LOCALE_EN;
+        this.message = {};
+        this.messages = {};
+        this.watchers = [];
         if (fallbackLocale) {
             this.fallbackLocale = fallbackLocale;
         }
@@ -8535,7 +8667,7 @@ function getPageIdByVm(instance) {
     }
     const rootProxy = vm.$.root.proxy;
     if (rootProxy && rootProxy.$page) {
-        return rootProxy.$page.id;
+        return getPageProxyId(rootProxy);
     }
 }
 function getCurrentPage() {
@@ -8546,9 +8678,9 @@ function getCurrentPage() {
     }
 }
 function getCurrentPageMeta() {
-    const page = getCurrentPage();
-    if (page) {
-        return page.$page.meta;
+    const $page = getCurrentPage()?.$page;
+    if ($page) {
+        return $page.meta;
     }
 }
 function getCurrentPageId() {
@@ -8606,6 +8738,9 @@ function initPageInternalInstance(openType, url, pageQuery, meta, eventChannel, 
         eventChannel,
         statusBarStyle: titleColor === '#ffffff' ? 'light' : 'dark',
     };
+}
+function getPageProxyId(proxy) {
+    return proxy.$page?.id || proxy.$basePage?.id;
 }
 
 function invokeHook(vm, name, args) {
@@ -8757,17 +8892,18 @@ function initOn() {
     on(ON_APP_ENTER_BACKGROUND, onAppEnterBackground);
 }
 function onResize(res) {
-    invokeHook(getCurrentPage(), ON_RESIZE, res);
+    const page = getCurrentPage();
+    invokeHook(page, ON_RESIZE, res);
     UniServiceJSBridge.invokeOnCallback('onWindowResize', res); // API
 }
 function onAppEnterForeground(enterOptions) {
     const page = getCurrentPage();
-    invokeHook(getApp(), ON_SHOW, enterOptions);
+    invokeHook((getApp()), ON_SHOW, enterOptions);
     invokeHook(page, ON_SHOW);
 }
 function onAppEnterBackground() {
-    invokeHook(getApp(), ON_HIDE);
-    invokeHook(getCurrentPage(), ON_HIDE);
+    invokeHook((getApp()), ON_HIDE);
+    invokeHook((getCurrentPage()), ON_HIDE);
 }
 
 const SUBSCRIBE_LIFECYCLE_HOOKS = [ON_PAGE_SCROLL, ON_REACH_BOTTOM];
@@ -8849,8 +8985,9 @@ function getRealPath(filepath) {
         // 鸿蒙平台特性
         return 'file:/' + normalizeLocalPath(filepath);
     }
-    // TODO 暂时转换为 resource
-    const wwwPath = normalizeLocalPath('_www').replace(/.+?\/apps\//, 'resource://rawfile/apps/');
+    // TODO 暂时使用当前 dirname，service 层注入 location
+    const href = location.href;
+    const wwwPath = href.substring(0, href.lastIndexOf('/'));
     // 绝对路径转换为本地文件系统路径
     if (filepath.indexOf('/') === 0) {
         // 平台绝对路径
@@ -8889,8 +9026,100 @@ function isSystemURL(filepath) {
     return false;
 }
 
+let vueApp;
+function getVueApp() {
+    return vueApp;
+}
+function initVueApp(appVm) {
+    const internalInstance = appVm.$;
+    // 定制 App 的 $children 为 devtools 服务 false
+    Object.defineProperty(internalInstance.ctx, '$children', {
+        get() {
+            return getAllPages().map((page) => page.$vm);
+        },
+    });
+    const appContext = internalInstance.appContext;
+    vueApp = extend(appContext.app, {
+        mountPage(pageComponent, pageProps, pageContainer) {
+            const vnode = createVNode(pageComponent, pageProps);
+            // store app context on the root VNode.
+            // this will be set on the root instance on initial mount.
+            vnode.appContext = appContext;
+            vnode.__page_container__ = pageContainer;
+            render(vnode, pageContainer);
+            const publicThis = vnode.component.proxy;
+            publicThis.__page_container__ = pageContainer;
+            return publicThis;
+        },
+        unmountPage: (pageInstance) => {
+            const { __page_container__ } = pageInstance;
+            if (__page_container__) {
+                __page_container__.isUnmounted = true;
+                render(null, __page_container__);
+            }
+        },
+    });
+}
+
+function getPage$BasePage(page) {
+    return page.$page;
+}
+const pages = [];
+function addCurrentPage(page) {
+    const $page = getPage$BasePage(page);
+    if (!$page.meta.isNVue) {
+        return pages.push(page);
+    }
+    // 开发阶段热刷新需要移除旧的相同 id 的 page
+    const index = pages.findIndex((p) => getPage$BasePage(page).id === $page.id);
+    if (index > -1) {
+        pages.splice(index, 1, page);
+    }
+    else {
+        pages.push(page);
+    }
+}
+function getPageById(id) {
+    return pages.find((page) => getPage$BasePage(page).id === id);
+}
+function getAllPages() {
+    return pages;
+}
+function getCurrentPages$1() {
+    const curPages = getCurrentBasePages();
+    return curPages;
+}
+function getCurrentBasePages() {
+    const curPages = [];
+    pages.forEach((page) => {
+        if (page.$.__isTabBar) {
+            if (page.$.__isActive) {
+                curPages.push(page);
+            }
+        }
+        else {
+            curPages.push(page);
+        }
+    });
+    return curPages;
+}
+function removePage(curPage) {
+    const index = pages.findIndex((page) => page === curPage);
+    if (index === -1) {
+        return;
+    }
+    const $basePage = getPage$BasePage(curPage);
+    if (!$basePage.meta.isNVue) {
+        getVueApp().unmountPage(curPage);
+    }
+    pages.splice(index, 1);
+    if (('production' !== 'production')) {
+        console.log(formatLog('removePage', $basePage));
+    }
+}
+
 function requestComponentInfo(pageVm, reqs, callback) {
-    if (pageVm.$page.meta.isNVue) {
+    if (getPage$BasePage(pageVm).meta.isNVue) {
         requestNVueComponentInfo(pageVm, reqs, callback);
     }
     else {
@@ -8905,7 +9134,7 @@ function requestVueComponentInfo(pageVm, reqs, callback) {
             }
             return req;
         }),
-    }, pageVm.$page.id, callback);
+    }, getPage$BasePage(pageVm).id, callback);
 }
 function requestNVueComponentInfo(pageVm, reqs, callback) {
     const ids = findNVueElementIds(reqs);
@@ -8966,96 +9195,12 @@ function findComponentRectAll(dom, nvueElementInfos, index, result, callback) {
     });
 }
 
-let vueApp;
-function getVueApp() {
-    return vueApp;
-}
-function initVueApp(appVm) {
-    const internalInstance = appVm.$;
-    // 定制 App 的 $children 为 devtools 服务 false
-    Object.defineProperty(internalInstance.ctx, '$children', {
-        get() {
-            return getAllPages().map((page) => page.$vm);
-        },
-    });
-    const appContext = internalInstance.appContext;
-    vueApp = extend(appContext.app, {
-        mountPage(pageComponent, pageProps, pageContainer) {
-            const vnode = createVNode(pageComponent, pageProps);
-            // store app context on the root VNode.
-            // this will be set on the root instance on initial mount.
-            vnode.appContext = appContext;
-            vnode.__page_container__ = pageContainer;
-            render(vnode, pageContainer);
-            const publicThis = vnode.component.proxy;
-            publicThis.__page_container__ = pageContainer;
-            return publicThis;
-        },
-        unmountPage: (pageInstance) => {
-            const { __page_container__ } = pageInstance;
-            if (__page_container__) {
-                __page_container__.isUnmounted = true;
-                render(null, __page_container__);
-            }
-        },
-    });
-}
-
-const pages = [];
-function addCurrentPage(page) {
-    const $page = page.$page;
-    if (!$page.meta.isNVue) {
-        return pages.push(page);
-    }
-    // 开发阶段热刷新需要移除旧的相同 id 的 page
-    const index = pages.findIndex((p) => p.$page.id === page.$page.id);
-    if (index > -1) {
-        pages.splice(index, 1, page);
-    }
-    else {
-        pages.push(page);
-    }
-}
-function getPageById(id) {
-    return pages.find((page) => page.$page.id === id);
-}
-function getAllPages() {
-    return pages;
-}
-function getCurrentPages$1() {
-    const curPages = [];
-    pages.forEach((page) => {
-        if (page.$.__isTabBar) {
-            if (page.$.__isActive) {
-                curPages.push(page);
-            }
-        }
-        else {
-            curPages.push(page);
-        }
-    });
-    return curPages;
-}
-function removePage(curPage) {
-    const index = pages.findIndex((page) => page === curPage);
-    if (index === -1) {
-        return;
-    }
-    if (!curPage.$page.meta.isNVue) {
-        getVueApp().unmountPage(curPage);
-    }
-    pages.splice(index, 1);
-    if (('production' !== 'production')) {
-        console.log(formatLog('removePage', curPage.$page));
-    }
-}
-
-function getEventName(reqId) {
+function getEventName$1(reqId) {
     const EVENT_NAME = 'IntersectionObserver';
     return `${EVENT_NAME}.${reqId}`;
 }
 function addIntersectionObserver({ reqId, component, options, callback }, _pageId) {
-    const eventName = getEventName(reqId);
+    const eventName = getEventName$1(reqId);
     UniServiceJSBridge.invokeViewMethod('addIntersectionObserver', {
         reqId,
         component: component.$el.nodeId,
@@ -9069,6 +9214,28 @@ function removeIntersectionObserver({ reqId, component }, _pageId) {
         reqId,
         component: component.$el.nodeId,
     }, _pageId);
+    UniServiceJSBridge.unsubscribe(getEventName$1(reqId));
+}
+
+function getEventName(reqId) {
+    const EVENT_NAME = 'MediaQueryObserver';
+    return `${EVENT_NAME}.${reqId}`;
+}
+function addMediaQueryObserver({ reqId, component, options, callback }, _pageId) {
+    const eventName = getEventName(reqId);
+    UniServiceJSBridge.invokeViewMethod('addMediaQueryObserver', {
+        reqId,
+        component: component.$el.nodeId,
+        options,
+        eventName,
+    }, _pageId);
+    UniServiceJSBridge.subscribe(eventName, callback);
+}
+function removeMediaQueryObserver({ reqId, component }, _pageId) {
+    UniServiceJSBridge.invokeViewMethod('removeMediaQueryObserver', {
+        reqId,
+        component: component.$el.nodeId,
+    }, _pageId);
     UniServiceJSBridge.unsubscribe(getEventName(reqId));
 }
 
@@ -9079,10 +9246,16 @@ function backbuttonListener() {
         success() { }, // 传入空方法，避免返回Promise，因为onBackPress可能导致fail
     });
 }
-const enterOptions$1 = /*#__PURE__*/ createLaunchOptions();
-const launchOptions$1 = /*#__PURE__*/ createLaunchOptions();
+const enterOptions = /*#__PURE__*/ createLaunchOptions();
+const launchOptions = /*#__PURE__*/ createLaunchOptions();
+function getLaunchOptions() {
+    return extend({}, launchOptions);
+}
+function getEnterOptions() {
+    return extend({}, enterOptions);
+}
 function initLaunchOptions({ path, query, referrerInfo, }) {
-    extend(launchOptions$1, {
+    extend(launchOptions, {
         path,
         query: query ? parseQuery(query) : {},
         referrerInfo: referrerInfo || {},
@@ -9090,21 +9263,11 @@ function initLaunchOptions({ path, query, referrerInfo, }) {
         channel: plus.runtime.channel,
         launcher: plus.runtime.launcher,
     });
-    extend(enterOptions$1, launchOptions$1);
-    return extend({}, launchOptions$1);
+    extend(enterOptions, launchOptions);
+    return enterOptions;
 }
 
 const TEMP_PATH = ''; // TODO 需要从applicationContext获取
-const enterOptions = /*#__PURE__*/ createLaunchOptions();
-const launchOptions = /*#__PURE__*/ createLaunchOptions();
-function getLaunchOptions() {
-    // TODO: Implement
-    return extend({}, launchOptions);
-}
-function getEnterOptions() {
-    // TODO: Implement
-    return extend({}, enterOptions);
-}
 
 function operateVideoPlayer(videoId, pageId, type, data) {
     UniServiceJSBridge.invokeViewMethod('video.' + videoId, {
@@ -9114,10 +9277,98 @@ function operateVideoPlayer(videoId, pageId, type, data) {
     }, pageId);
 }
 
+function operateMap(id, pageId, type, data, operateMapCallback) {
+    UniServiceJSBridge.invokeViewMethod('map.' + id, {
+        type,
+        data,
+    }, pageId, operateMapCallback);
+}
+
+const API_ADD_INTERCEPTOR = 'addInterceptor';
+const API_REMOVE_INTERCEPTOR = 'removeInterceptor';
+const AddInterceptorProtocol = [
+    {
+        name: 'method',
+        type: [String, Object],
+        required: true,
+    },
+];
+const RemoveInterceptorProtocol = AddInterceptorProtocol;
+
+function mergeInterceptorHook(interceptors, interceptor) {
+    Object.keys(interceptor).forEach((hook) => {
+        if (isFunction(interceptor[hook])) {
+            interceptors[hook] = mergeHook(interceptors[hook], interceptor[hook]);
+        }
+    });
+}
+function removeInterceptorHook(interceptors, interceptor) {
+    if (!interceptors || !interceptor) {
+        return;
+    }
+    Object.keys(interceptor).forEach((name) => {
+        const hooks = interceptors[name];
+        const hook = interceptor[name];
+        if (isArray(hooks) && isFunction(hook)) {
+            remove(hooks, hook);
+        }
+    });
+}
+function mergeHook(parentVal, childVal) {
+    const res = childVal
+        ? parentVal
+            ? parentVal.concat(childVal)
+            : isArray(childVal)
+                ? childVal
+                : [childVal]
+        : parentVal;
+    return res ? dedupeHooks(res) : res;
+}
+function dedupeHooks(hooks) {
+    const res = [];
+    for (let i = 0; i < hooks.length; i++) {
+        if (res.indexOf(hooks[i]) === -1) {
+            res.push(hooks[i]);
+        }
+    }
+    return res;
+}
+const addInterceptor = defineSyncApi(API_ADD_INTERCEPTOR, (method, interceptor) => {
+    if (isString(method) && isPlainObject(interceptor)) {
+        mergeInterceptorHook(scopedInterceptors[method] || (scopedInterceptors[method] = {}), interceptor);
+    }
+    else if (isPlainObject(method)) {
+        mergeInterceptorHook(globalInterceptors, method);
+    }
+}, AddInterceptorProtocol);
+const removeInterceptor = defineSyncApi(API_REMOVE_INTERCEPTOR, (method, interceptor) => {
+    if (isString(method)) {
+        if (isPlainObject(interceptor)) {
+            removeInterceptorHook(scopedInterceptors[method], interceptor);
+        }
+        else {
+            delete scopedInterceptors[method];
+        }
+    }
+    else if (isPlainObject(method)) {
+        removeInterceptorHook(globalInterceptors, method);
+    }
+}, RemoveInterceptorProtocol);
+const interceptors = {};
+
+const validator = [
+    {
+        name: 'id',
+        type: String,
+        required: true,
+    },
+];
 /* export const API_CREATE_AUDIO_CONTEXT = 'createAudioContext'
 export type API_TYPE_CREATE_AUDIO_CONTEXT = typeof uni.createAudioContext
 export const CreateAudioContextProtocol = validator */
 const API_CREATE_VIDEO_CONTEXT = 'createVideoContext';
+const API_CREATE_MAP_CONTEXT = 'createMapContext';
+const CreateMapContextProtocol = validator;
 const API_CREATE_CANVAS_CONTEXT = 'createCanvasContext';
 const CreateCanvasContextProtocol = [
     {
@@ -9130,11 +9381,13 @@ const CreateCanvasContextProtocol = [
         type: Object,
     },
 ];
+validator.concat({
+    name: 'componentInstance',
+    type: Object,
+});
 
 const RATES = [0.5, 0.8, 1.0, 1.25, 1.5, 2.0];
 class VideoContext {
-    id;
-    pageId;
     constructor(id, pageId) {
         this.id = id;
         this.pageId = pageId;
@@ -9183,6 +9436,93 @@ const createVideoContext = defineSyncApi(API_CREATE_VIDEO_CONTEXT, (id, context)
     }
     return new VideoContext(id, getPageIdByVm(getCurrentPageVm()));
 });
+
+const operateMapCallback = (options, res) => {
+    const errMsg = res.errMsg || '';
+    if (new RegExp('\\:\\s*fail').test(errMsg)) {
+        options.fail && options.fail(res);
+    }
+    else {
+        options.success && options.success(res);
+    }
+    options.complete && options.complete(res);
+};
+const operateMapWrap = (id, pageId, type, options) => {
+    operateMap(id, pageId, type, options, (res) => {
+        options && operateMapCallback(options, res);
+    });
+};
+class MapContext {
+    constructor(id, pageId) {
+        this.id = id;
+        this.pageId = pageId;
+    }
+    getCenterLocation(options) {
+        operateMapWrap(this.id, this.pageId, 'getCenterLocation', options);
+    }
+    moveToLocation(options) {
+        operateMapWrap(this.id, this.pageId, 'moveToLocation', options);
+    }
+    getScale(options) {
+        operateMapWrap(this.id, this.pageId, 'getScale', options);
+    }
+    getRegion(options) {
+        operateMapWrap(this.id, this.pageId, 'getRegion', options);
+    }
+    includePoints(options) {
+        operateMapWrap(this.id, this.pageId, 'includePoints', options);
+    }
+    translateMarker(options) {
+        operateMapWrap(this.id, this.pageId, 'translateMarker', options);
+    }
+    $getAppMap() {
+        {
+            return plus.maps.getMapById(this.pageId + '-map-' + this.id);
+        }
+    }
+    addCustomLayer(options) {
+        operateMapWrap(this.id, this.pageId, 'addCustomLayer', options);
+    }
+    removeCustomLayer(options) {
+        operateMapWrap(this.id, this.pageId, 'removeCustomLayer', options);
+    }
+    addGroundOverlay(options) {
+        operateMapWrap(this.id, this.pageId, 'addGroundOverlay', options);
+    }
+    removeGroundOverlay(options) {
+        operateMapWrap(this.id, this.pageId, 'removeGroundOverlay', options);
+    }
+    updateGroundOverlay(options) {
+        operateMapWrap(this.id, this.pageId, 'updateGroundOverlay', options);
+    }
+    initMarkerCluster(options) {
+        operateMapWrap(this.id, this.pageId, 'initMarkerCluster', options);
+    }
+    addMarkers(options) {
+        operateMapWrap(this.id, this.pageId, 'addMarkers', options);
+    }
+    removeMarkers(options) {
+        operateMapWrap(this.id, this.pageId, 'removeMarkers', options);
+    }
+    moveAlong(options) {
+        operateMapWrap(this.id, this.pageId, 'moveAlong', options);
+    }
+    setLocMarkerIcon(options) {
+        operateMapWrap(this.id, this.pageId, 'setLocMarkerIcon', options);
+    }
+    openMapApp(options) {
+        operateMapWrap(this.id, this.pageId, 'openMapApp', options);
+    }
+    on(name, callback) {
+        operateMapWrap(this.id, this.pageId, 'on', { name, callback });
+    }
+}
+const createMapContext = defineSyncApi(API_CREATE_MAP_CONTEXT, (id, context) => {
+    if (context) {
+        return new MapContext(id, getPageIdByVm(context));
+    }
+    return new MapContext(id, getPageIdByVm(getCurrentPageVm()));
+}, CreateMapContextProtocol);
 
 function getInt(name, defaultValue) {
     return function (value, params) {
@@ -9527,9 +9867,6 @@ function checkColor(e) {
 //#endregion
 //#region Class
 class CanvasGradient {
-    type;
-    data;
-    colorStop;
     constructor(type, data) {
         this.type = type;
         this.data = data;
@@ -9540,9 +9877,6 @@ class CanvasGradient {
     }
 }
 class Pattern {
-    type;
-    data;
-    colorStop;
     constructor(image, repetition) {
         this.type = 'pattern';
         this.data = image;
@@ -9550,7 +9884,6 @@ class Pattern {
     }
 }
 class TextMetrics {
-    width;
     constructor(width) {
         this.width = width;
     }
@@ -9564,13 +9897,6 @@ const getTempPath = () => {
     return _TEMP_PATH;
 };
 class CanvasContext {
-    id;
-    pageId;
-    actions;
-    path;
-    subpath;
-    state;
-    drawingState;
     constructor(id, pageId) {
         this.id = id;
         this.pageId = pageId;
@@ -10272,7 +10598,435 @@ const canvasToTempFilePath = defineAsyncApi(API_CANVAS_TO_TEMP_FILE_PATH, ({ x =
     });
 }, CanvasToTempFilePathProtocol, CanvasToTempFilePathOptions);
 
+const defaultOptions = {
+    thresholds: [0],
+    initialRatio: 0,
+    observeAll: false,
+};
+const MARGINS = ['top', 'right', 'bottom', 'left'];
+let reqComponentObserverId$1 = 1;
+function normalizeRootMargin(margins = {}) {
+    return MARGINS.map((name) => `${Number(margins[name]) || 0}px`).join(' ');
+}
+class ServiceIntersectionObserver {
+    constructor(component, options) {
+        this._pageId = getPageIdByVm(component);
+        this._component = component;
+        this._options = extend({}, defaultOptions, options);
+    }
+    relativeTo(selector, margins) {
+        this._options.relativeToSelector = selector;
+        this._options.rootMargin = normalizeRootMargin(margins);
+        return this;
+    }
+    relativeToViewport(margins) {
+        this._options.relativeToSelector = undefined;
+        this._options.rootMargin = normalizeRootMargin(margins);
+        return this;
+    }
+    observe(selector, callback) {
+        if (!isFunction(callback)) {
+            return;
+        }
+        this._options.selector = selector;
+        this._reqId = reqComponentObserverId$1++;
+        addIntersectionObserver({
+            reqId: this._reqId,
+            component: this._component,
+            options: this._options,
+            callback,
+        }, this._pageId);
+    }
+    disconnect() {
+        this._reqId &&
+            removeIntersectionObserver({ reqId: this._reqId, component: this._component }, this._pageId);
+    }
+}
+const createIntersectionObserver = defineSyncApi('createIntersectionObserver', (context, options) => {
+    context = resolveComponentInstance(context);
+    if (context && !getPageIdByVm(context)) {
+        options = context;
+        context = null;
+    }
+    if (context) {
+        return new ServiceIntersectionObserver(context, options);
+    }
+    return new ServiceIntersectionObserver(getCurrentPageVm(), options);
+});
+
+let reqComponentObserverId = 1;
+class ServiceMediaQueryObserver {
+    constructor(component) {
+        this._pageId =
+            component.$page && component.$page.id;
+        this._component = component;
+    }
+    observe(options, callback) {
+        if (!isFunction(callback)) {
+            return;
+        }
+        this._reqId = reqComponentObserverId++;
+        addMediaQueryObserver({
+            reqId: this._reqId,
+            component: this._component,
+            options,
+            callback,
+        }, this._pageId);
+    }
+    disconnect() {
+        this._reqId &&
+            removeMediaQueryObserver({
+                reqId: this._reqId,
+                component: this._component,
+            }, this._pageId);
+    }
+}
+const createMediaQueryObserver = defineSyncApi('createMediaQueryObserver', (context) => {
+    context = resolveComponentInstance(context);
+    if (context && !getPageIdByVm(context)) {
+        context = null;
+    }
+    if (context) {
+        return new ServiceMediaQueryObserver(context);
+    }
+    return new ServiceMediaQueryObserver(getCurrentPageVm());
+});
+
+// let eventReady = false
+let index$1 = 0;
+let optionsCache = {};
+function operateEditor(componentId, pageId, type, options) {
+    const data = { options };
+    const needCallOptions = options &&
+        ('success' in options || 'fail' in options || 'complete' in options);
+    if (needCallOptions) {
+        const callbackId = String(index$1++);
+        data.callbackId = callbackId;
+        optionsCache[callbackId] = options;
+    }
+    UniServiceJSBridge.invokeViewMethod(`editor.${componentId}`, {
+        type,
+        data,
+    }, pageId, ({ callbackId, data }) => {
+        if (needCallOptions) {
+            callOptions(optionsCache[callbackId], data);
+            delete optionsCache[callbackId];
+        }
+    });
+}
+class EditorContext {
+    constructor(id, pageId) {
+        this.id = id;
+        this.pageId = pageId;
+    }
+    format(name, value) {
+        this._exec('format', {
+            name,
+            value,
+        });
+    }
+    insertDivider() {
+        this._exec('insertDivider');
+    }
+    insertImage(options) {
+        this._exec('insertImage', options);
+    }
+    insertText(options) {
+        this._exec('insertText', options);
+    }
+    setContents(options) {
+        this._exec('setContents', options);
+    }
+    getContents(options) {
+        this._exec('getContents', options);
+    }
+    clear(options) {
+        this._exec('clear', options);
+    }
+    removeFormat(options) {
+        this._exec('removeFormat', options);
+    }
+    undo(options) {
+        this._exec('undo', options);
+    }
+    redo(options) {
+        this._exec('redo', options);
+    }
+    blur(options) {
+        this._exec('blur', options);
+    }
+    getSelectionText(options) {
+        this._exec('getSelectionText', options);
+    }
+    scrollIntoView(options) {
+        this._exec('scrollIntoView', options);
+    }
+    _exec(method, options) {
+        operateEditor(this.id, this.pageId, method, options);
+    }
+}
+
+const ContextClasss = {
+    canvas: CanvasContext,
+    map: MapContext,
+    video: VideoContext,
+    editor: EditorContext,
+};
+function convertContext(result) {
+    if (result && result.contextInfo) {
+        const { id, type, page } = result.contextInfo;
+        const ContextClass = ContextClasss[type];
+        result.context = new ContextClass(id, page);
+        delete result.contextInfo;
+    }
+}
+class NodesRef {
+    constructor(selectorQuery, component, selector, single) {
+        this._selectorQuery = selectorQuery;
+        this._component = component;
+        this._selector = selector;
+        this._single = single;
+    }
+    boundingClientRect(callback) {
+        this._selectorQuery._push(this._selector, this._component, this._single, {
+            id: true,
+            dataset: true,
+            rect: true,
+            size: true,
+        }, callback);
+        return this._selectorQuery;
+    }
+    fields(fields, callback) {
+        this._selectorQuery._push(this._selector, this._component, this._single, fields, callback);
+        return this._selectorQuery;
+    }
+    scrollOffset(callback) {
+        this._selectorQuery._push(this._selector, this._component, this._single, {
+            id: true,
+            dataset: true,
+            scrollOffset: true,
+        }, callback);
+        return this._selectorQuery;
+    }
+    context(callback) {
+        this._selectorQuery._push(this._selector, this._component, this._single, {
+            context: true,
+        }, callback);
+        return this._selectorQuery;
+    }
+    node(callback) {
+        this._selectorQuery._push(this._selector, this._component, this._single, {
+            node: true,
+        }, callback);
+        return this._selectorQuery;
+    }
+}
+class SelectorQuery {
+    constructor(page) {
+        this._component = undefined;
+        this._page = page;
+        this._queue = [];
+        this._queueCb = [];
+    }
+    exec(callback) {
+        requestComponentInfo(this._page, this._queue, (res) => {
+            const queueCbs = this._queueCb;
+            res.forEach((result, index) => {
+                if (isArray(result)) {
+                    result.forEach(convertContext);
+                }
+                else {
+                    convertContext(result);
+                }
+                const queueCb = queueCbs[index];
+                if (isFunction(queueCb)) {
+                    queueCb.call(this, result);
+                }
+            });
+            // isFn(callback) &&
+            if (isFunction(callback)) {
+                callback.call(this, res);
+            }
+        });
+        // TODO
+        return this._nodesRef;
+    }
+    in(component) {
+        this._component = resolveComponentInstance(component);
+        return this;
+    }
+    select(selector) {
+        return (this._nodesRef = new NodesRef(this, this._component, selector, true));
+    }
+    selectAll(selector) {
+        return (this._nodesRef = new NodesRef(this, this._component, selector, false));
+    }
+    selectViewport() {
+        return (this._nodesRef = new NodesRef(this, null, '', true));
+    }
+    _push(selector, component, single, fields, callback) {
+        this._queue.push({
+            component,
+            selector,
+            single,
+            fields,
+        });
+        this._queueCb.push(callback);
+    }
+}
+const createSelectorQuery = defineSyncApi('createSelectorQuery', (context) => {
+    context = resolveComponentInstance(context);
+    if (context && !getPageIdByVm(context)) {
+        context = null;
+    }
+    return new SelectorQuery(context || getCurrentPageVm());
+});
+
+// import { elemInArray } from '../../helpers/protocol'
+const API_CREATE_ANIMATION = 'createAnimation';
+// const timingFunctions: API_TYPE_CREATE_ANIMATION_Timing_Function[] = [
+//   'linear',
+//   'ease',
+//   'ease-in',
+//   'ease-in-out',
+//   'ease-out',
+//   'step-start',
+//   'step-end',
+// ]
+const CreateAnimationOptions = {
+    // 目前参数校验不支持此api校验
+    formatArgs: {
+    /* duration: 400,
+    timingFunction(timingFunction, params) {
+      params.timingFunction = elemInArray(timingFunction, timingFunctions)
+    },
+    delay: 0,
+    transformOrigin: '50% 50% 0', */
+    },
+};
+const CreateAnimationProtocol = {
+    duration: Number,
+    timingFunction: String,
+    delay: Number,
+    transformOrigin: String,
+};
+
+const defaultOption = {
+    duration: 400,
+    timingFunction: 'linear',
+    delay: 0,
+    transformOrigin: '50% 50% 0',
+};
+class MPAnimation {
+    constructor(option) {
+        this.actions = [];
+        this.currentTransform = {};
+        this.currentStepAnimates = [];
+        this.option = extend({}, defaultOption, option);
+    }
+    _getOption(option) {
+        const _option = {
+            transition: extend({}, this.option, option),
+            transformOrigin: '',
+        };
+        _option.transformOrigin = _option.transition.transformOrigin;
+        delete _option.transition.transformOrigin;
+        return _option;
+    }
+    _pushAnimates(type, args) {
+        this.currentStepAnimates.push({
+            type: type,
+            args: args,
+        });
+    }
+    _converType(type) {
+        return type.replace(/[A-Z]/g, (text) => {
+            return `-${text.toLowerCase()}`;
+        });
+    }
+    _getValue(value) {
+        return typeof value === 'number' ? `${value}px` : value;
+    }
+    export() {
+        const actions = this.actions;
+        this.actions = [];
+        return {
+            actions,
+        };
+    }
+    step(option) {
+        this.currentStepAnimates.forEach((animate) => {
+            if (animate.type !== 'style') {
+                this.currentTransform[animate.type] = animate;
+            }
+            else {
+                this.currentTransform[`${animate.type}.${animate.args[0]}`] = animate;
+            }
+        });
+        this.actions.push({
+            animates: Object.values(this.currentTransform),
+            option: this._getOption(option),
+        });
+        this.currentStepAnimates = [];
+        return this;
+    }
+}
+const initAnimationProperty = /*#__PURE__*/ once(() => {
+    const animateTypes1 = [
+        'matrix',
+        'matrix3d',
+        'rotate',
+        'rotate3d',
+        'rotateX',
+        'rotateY',
+        'rotateZ',
+        'scale',
+        'scale3d',
+        'scaleX',
+        'scaleY',
+        'scaleZ',
+        'skew',
+        'skewX',
+        'skewY',
+        'translate',
+        'translate3d',
+        'translateX',
+        'translateY',
+        'translateZ',
+    ];
+    const animateTypes2 = ['opacity', 'backgroundColor'];
+    const animateTypes3 = ['width', 'height', 'left', 'right', 'top', 'bottom'];
+    animateTypes1.concat(animateTypes2, animateTypes3).forEach((type) => {
+        MPAnimation.prototype[type] = function (...args) {
+            if (animateTypes2.concat(animateTypes3).includes(type)) {
+                this._pushAnimates('style', [
+                    this._converType(type),
+                    animateTypes3.includes(type) ? this._getValue(args[0]) : args[0],
+                ]);
+            }
+            else {
+                this._pushAnimates(type, args);
+            }
+            return this;
+        };
+    });
+});
+const createAnimation = defineSyncApi(API_CREATE_ANIMATION, (option) => {
+    initAnimationProperty();
+    return new MPAnimation(option);
+}, CreateAnimationProtocol, CreateAnimationOptions);
+
 const API_ON_TAB_BAR_MID_BUTTON_TAP = 'onTabBarMidButtonTap';
+
+const API_ON_WINDOW_RESIZE = 'onWindowResize';
+
+/**
+ * 监听窗口大小变化
+ */
+const onWindowResize = defineOnApi(API_ON_WINDOW_RESIZE, () => {
+    // 生命周期包括onResize，框架直接监听resize
+    // window.addEventListener('resize', onResize)
+});
 
 const API_SET_LOCALE = 'setLocale';
 const API_GET_LOCALE = 'getLocale';
@@ -10308,6 +11062,20 @@ const setLocale = defineSyncApi(API_SET_LOCALE, (locale) => {
     return false;
 });
 
+const API_GET_SELECTED_TEXT_RANGE = 'getSelectedTextRange';
+
+const getSelectedTextRange = defineAsyncApi(API_GET_SELECTED_TEXT_RANGE, (_, { resolve, reject }) => {
+    UniServiceJSBridge.invokeViewMethod(API_GET_SELECTED_TEXT_RANGE, {}, getCurrentPageId(), (res) => {
+        if (typeof res.end === 'undefined' &&
+            typeof res.start === 'undefined') {
+            reject('no focused');
+        }
+        else {
+            resolve(res);
+        }
+    });
+});
+
 const appHooks = {
     [ON_UNHANDLE_REJECTION]: [],
     [ON_PAGE_NOT_FOUND]: [],
@@ -10323,11 +11091,11 @@ function injectAppHooks(appInstance) {
     });
 }
 const API_GET_ENTER_OPTIONS_SYNC = 'getEnterOptionsSync';
-defineSyncApi(API_GET_ENTER_OPTIONS_SYNC, () => {
+const getEnterOptionsSync = defineSyncApi(API_GET_ENTER_OPTIONS_SYNC, () => {
     return getEnterOptions();
 });
 const API_GET_LAUNCH_OPTIONS_SYNC = 'getLaunchOptionsSync';
-defineSyncApi(API_GET_LAUNCH_OPTIONS_SYNC, () => {
+const getLaunchOptionsSync = defineSyncApi(API_GET_LAUNCH_OPTIONS_SYNC, () => {
     return getLaunchOptions();
 });
 
@@ -10339,6 +11107,101 @@ const CanIUseProtocol = [
         required: true,
     },
 ];
+
+const API_CHOOSE_LOCATION = 'chooseLocation';
+const ChooseLocationProtocol = {
+    keyword: String,
+    latitude: Number,
+    longitude: Number,
+};
+
+const API_GET_LOCATION = 'getLocation';
+const coordTypes$1 = ['wgs84', 'gcj02'];
+const GetLocationOptions = {
+    formatArgs: {
+        type(value, params) {
+            value = (value || '').toLowerCase();
+            if (coordTypes$1.indexOf(value) === -1) {
+                params.type = coordTypes$1[0];
+            }
+            else {
+                params.type = value;
+            }
+        },
+        altitude(value, params) {
+            params.altitude = value ? value : false;
+        },
+    },
+};
+const GetLocationProtocol = {
+    type: String,
+    altitude: Boolean,
+};
+
+const API_OPEN_LOCATION = 'openLocation';
+const checkProps = (key, value) => {
+    if (value === undefined) {
+        return `${key} should not be empty.`;
+    }
+    if (typeof value !== 'number') {
+        let receivedType = typeof value;
+        receivedType = receivedType[0].toUpperCase() + receivedType.substring(1);
+        return `Expected Number, got ${receivedType} with value ${JSON.stringify(value)}.`;
+    }
+};
+const OpenLocationOptions = {
+    formatArgs: {
+        latitude(value, params) {
+            const checkedInfo = checkProps('latitude', value);
+            if (checkedInfo) {
+                return checkedInfo;
+            }
+            params.latitude = value;
+        },
+        longitude(value, params) {
+            const checkedInfo = checkProps('longitude', value);
+            if (checkedInfo) {
+                return checkedInfo;
+            }
+            params.longitude = value;
+        },
+        scale(value, params) {
+            value = Math.floor(value);
+            params.scale = value >= 5 && value <= 18 ? value : 18;
+        },
+    },
+};
+const OpenLocationProtocol = {
+    latitude: Number,
+    longitude: Number,
+    scale: Number,
+    name: String,
+    address: String,
+};
+
+const API_START_LOCATION_UPDATE = 'startLocationUpdate';
+const API_ON_LOCATION_CHANGE = 'onLocationChange';
+const API_STOP_LOCATION_UPDATE = 'stopLocationUpdate';
+const API_OFF_LOCATION_CHANGE = 'offLocationChange';
+const API_OFF_LOCATION_CHANGE_ERROR = 'offLocationChangeError';
+const API_ON_LOCATION_CHANGE_ERROR = 'onLocationChangeError';
+const coordTypes = ['wgs84', 'gcj02'];
+const StartLocationUpdateProtocol = {
+    type: String,
+};
+const StartLocationUpdateOptions = {
+    formatArgs: {
+        type(value, params) {
+            value = (value || '').toLowerCase();
+            if (coordTypes.indexOf(value) === -1) {
+                params.type = coordTypes[1];
+            }
+            else {
+                params.type = value;
+            }
+        },
+    },
+};
 
 function encodeQueryString(url) {
     if (!isString(url)) {
@@ -10524,6 +11387,72 @@ function createNormalizeUrl(type) {
         }
     };
 }
+
+const API_LOAD_FONT_FACE = 'loadFontFace';
+const LoadFontFaceProtocol = {
+    family: {
+        type: String,
+        required: true,
+    },
+    source: {
+        type: String,
+        required: true,
+    },
+    desc: Object,
+};
+
+const FRONT_COLORS = ['#ffffff', '#000000'];
+const API_SET_NAVIGATION_BAR_COLOR = 'setNavigationBarColor';
+const SetNavigationBarColorOptions = {
+    formatArgs: {
+        animation(animation, params) {
+            if (!animation) {
+                animation = { duration: 0, timingFunc: 'linear' };
+            }
+            params.animation = {
+                duration: animation.duration || 0,
+                timingFunc: animation.timingFunc || 'linear',
+            };
+        },
+    },
+};
+const SetNavigationBarColorProtocol = {
+    frontColor: {
+        type: String,
+        required: true,
+        validator(frontColor) {
+            if (FRONT_COLORS.indexOf(frontColor) === -1) {
+                return `invalid frontColor "${frontColor}"`;
+            }
+        },
+    },
+    backgroundColor: {
+        type: String,
+        required: true,
+    },
+    animation: Object,
+};
+const API_SET_NAVIGATION_BAR_TITLE = 'setNavigationBarTitle';
+const SetNavigationBarTitleProtocol = {
+    title: {
+        type: String,
+        required: true,
+    },
+};
+const API_SHOW_NAVIGATION_BAR_LOADING = 'showNavigationBarLoading';
+const API_HIDE_NAVIGATION_BAR_LOADING = 'hideNavigationBarLoading';
+
+const API_PAGE_SCROLL_TO = 'pageScrollTo';
+const PageScrollToProtocol = {
+    scrollTop: Number,
+    selector: String,
+    duration: Number,
+};
+const PageScrollToOptions = {
+    formatArgs: {
+        duration: 300,
+    },
+};
 
 const IndexProtocol = {
     index: {
@@ -10912,6 +11841,138 @@ const hideTabBarRedDot = defineAsyncApi(API_HIDE_TAB_BAR_RED_DOT, ({ index }, { 
     resolve();
 }, HideTabBarRedDotProtocol, HideTabBarRedDotOptions);
 
+const loadFontFace = defineAsyncApi(API_LOAD_FONT_FACE, (options, { resolve, reject }) => {
+    const pageId = getPageIdByVm(getCurrentPageVm());
+    UniServiceJSBridge.invokeViewMethod(API_LOAD_FONT_FACE, options, pageId, (err) => {
+        if (typeof err === 'string') {
+            reject(err);
+        }
+        else {
+            resolve();
+        }
+    });
+}, LoadFontFaceProtocol);
+
+function getCurrentWebview() {
+    const page = getCurrentPage();
+    if (page) {
+        return page.$getAppWebview();
+    }
+    return null;
+}
+function getWebview(page) {
+    if (page) {
+        return page.$getAppWebview();
+    }
+    return getCurrentWebview();
+}
+
+const setNavigationBarTitle = defineAsyncApi(API_SET_NAVIGATION_BAR_TITLE, ({ __page__, title }, { resolve, reject }) => {
+    const webview = getWebview(__page__);
+    if (webview) {
+        const style = webview.getStyle();
+        if (style && style.titleNView) {
+            webview.setStyle({
+                titleNView: {
+                    titleText: title,
+                },
+            });
+        }
+        resolve();
+    }
+    else {
+        reject();
+    }
+}, SetNavigationBarTitleProtocol);
+const showNavigationBarLoading = defineAsyncApi(API_SHOW_NAVIGATION_BAR_LOADING, (args, { resolve, reject }) => {
+    let webview = null;
+    if (args)
+        webview = getWebview(args.__page__);
+    if (webview) {
+        const style = webview.getStyle();
+        if (style && style.titleNView) {
+            webview.setStyle({
+                titleNView: {
+                    // @ts-expect-error
+                    loading: true,
+                },
+            });
+        }
+        resolve();
+    }
+    else {
+        reject();
+    }
+});
+const hideNavigationBarLoading = defineAsyncApi(API_HIDE_NAVIGATION_BAR_LOADING, (args, { resolve, reject }) => {
+    let webview = null;
+    if (args)
+        webview = getWebview(args.__page__);
+    if (webview) {
+        const style = webview.getStyle();
+        if (style && style.titleNView) {
+            webview.setStyle({
+                titleNView: {
+                    // @ts-expect-error
+                    loading: false,
+                },
+            });
+        }
+        resolve();
+    }
+    else {
+        reject();
+    }
+});
+function setPageStatusBarStyle(statusBarStyle) {
+    const pages = getCurrentPages();
+    if (!pages.length) {
+        return;
+    }
+    // 框架内部页面跳转会从这里获取style配置
+    pages[pages.length - 1].$page.statusBarStyle = statusBarStyle;
+}
+const setNavigationBarColor = defineAsyncApi(API_SET_NAVIGATION_BAR_COLOR, ({ __page__, frontColor, backgroundColor }, { resolve, reject }) => {
+    const webview = getWebview(__page__);
+    if (webview) {
+        const styles = {};
+        if (frontColor) {
+            styles.titleColor = frontColor;
+        }
+        if (backgroundColor) {
+            styles.backgroundColor = backgroundColor;
+        }
+        const statusBarStyle = frontColor === '#000000' ? 'dark' : 'light';
+        plus.navigator.setStatusBarStyle(statusBarStyle);
+        // 用户调用api时同时改变当前页配置，这样在系统调用设置时，可以避免覆盖用户设置
+        setPageStatusBarStyle(statusBarStyle);
+        const style = webview.getStyle();
+        if (style && style.titleNView) {
+            if (style.titleNView.autoBackButton) {
+                styles.backButton = styles.backButton || {};
+                styles.backButton.color = frontColor;
+            }
+            webview.setStyle({
+                titleNView: styles,
+            });
+        }
+        resolve();
+    }
+    else {
+        reject();
+    }
+}, SetNavigationBarColorProtocol, SetNavigationBarColorOptions);
+
+function onKeyboardHeightChangeCallback(res) {
+    UniServiceJSBridge.invokeOnCallback(ON_KEYBOARD_HEIGHT_CHANGE, res);
+}
+const onKeyboardHeightChange = defineOnApi(ON_KEYBOARD_HEIGHT_CHANGE, () => {
+    UniServiceJSBridge.on(ON_KEYBOARD_HEIGHT_CHANGE, onKeyboardHeightChangeCallback);
+});
+const offKeyboardHeightChange = defineOffApi(ON_KEYBOARD_HEIGHT_CHANGE, () => {
+    UniServiceJSBridge.off(ON_KEYBOARD_HEIGHT_CHANGE, onKeyboardHeightChangeCallback);
+});
+
 const canIUse = defineSyncApi(API_CAN_I_USE, (schema) => {
     if (hasOwn$1(uni, schema)) {
         return true;
@@ -11195,12 +12256,11 @@ function initDebugRefresh(isTab, path, query) {
     };
 }
 
-const downgrade = 'Harmony' === 'Android' ;
+const downgrade = 'HarmonyOS' === 'Android' ;
 const ANI_SHOW = 'pop-in';
 const ANI_DURATION = 300;
 const ANI_CLOSE = downgrade ? 'slide-out-right' : 'pop-out';
 const VIEW_WEBVIEW_PATH = '_www/__uniappview.html';
-const WEBVIEW_ID_PREFIX = 'webviewId';
 
 let preloadWebview;
 function setPreloadWebview(webview) {
@@ -11229,7 +12289,8 @@ function createPreloadWebview() {
  */
 function isDirectPage(page) {
     return (__uniConfig.realEntryPagePath &&
-        page.$page.route === __uniConfig.entryPagePath);
+        getPage$BasePage(page).route ===
+            __uniConfig.entryPagePath);
 }
 /**
  * 重新启动到首页
@@ -11242,11 +12303,27 @@ function reLaunchEntryPage() {
     });
 }
 
+function onWebviewResize(webview) {
+    const { emit } = UniServiceJSBridge;
+    const onResize = function ({ width, height, }) {
+        const landscape = Math.abs(plus.navigator.getOrientation()) === 90;
+        const res = {
+            deviceOrientation: landscape ? 'landscape' : 'portrait',
+            size: {
+                windowWidth: Math.ceil(width),
+                windowHeight: Math.ceil(height),
+            },
+        };
+        emit(ON_RESIZE, res, parseInt(webview.id)); // Page lifecycle
+    };
+    webview.addEventListener('resize', debounce(onResize, 50, { setTimeout, clearTimeout }));
+}
+
 function onWebviewReady(pageId, callback) {
     UniServiceJSBridge.once(ON_WEBVIEW_READY + '.' + pageId, callback);
 }
 
-function closeWebview(webview, animationType, animationDuration) {
+function closeWebview$1(webview, animationType, animationDuration) {
     webview[webview.__preload__ ? 'hide' : 'close'](animationType, animationDuration);
 }
 function showWebview(webview, animationType, animationDuration, showCallback, delay) {
@@ -11286,24 +12363,6 @@ function showWebview(webview, animationType, animationDuration, showCallback, de
         });
     }, delay);
 }
-function backWebview(webview, callback) {
-    const children = webview.children();
-    if (!children || !children.length) {
-        // 无子 webview
-        return callback();
-    }
-    // 如果页面有subNvues，切使用了webview组件，则返回时子webview会取错，因此需要做id匹配
-    const childWebview = children.find((webview) => webview.id.indexOf(WEBVIEW_ID_PREFIX) === 0) ||
-        children[0];
-    childWebview.canBack(({ canBack }) => {
-        if (canBack) {
-            childWebview.back(); // webview 返回
-        }
-        else {
-            callback();
-        }
-    });
-}
 
 let pendingNavigator = false;
 function getPendingNavigator() {
@@ -11321,7 +12380,7 @@ function setPendingNavigator(path, callback, msg) {
 }
 function closePage(page, animationType, animationDuration) {
     removePage(page);
-    closeWebview(page.$getAppWebview(), animationType, animationDuration);
+    closeWebview$1(page.$getAppWebview(), animationType, animationDuration);
 }
 function pendingNavigate() {
     if (!pendingNavigator) {
@@ -11382,22 +12441,14 @@ function navigate(path, callback, isAppLaunch) {
 }
 
 class UniPageNode extends UniNode {
-    pageId;
-    _id = 1;
-    _created = false;
-    _updating = false;
-    options;
-    createAction;
-    createdAction;
-    scrollAction;
-    _createActionMap = new Map();
-    updateActions = [];
-    dicts = [];
-    normalizeDict;
-    isUnmounted;
-    _update;
     constructor(pageId, options, setup = false) {
         super(NODE_TYPE_PAGE, '#page', null);
+        this._id = 1;
+        this._created = false;
+        this._updating = false;
+        this._createActionMap = new Map();
+        this.updateActions = [];
+        this.dicts = [];
         this.nodeId = 0;
         this.pageId = pageId;
         this.pageNode = this;
@@ -11681,15 +12732,18 @@ function createPageNode(pageId, pageOptions, setup) {
 function setupPage(component) {
     const oldSetup = component.setup;
     component.inheritAttrs = false; // 禁止继承 __pageId 等属性，避免告警
-    component.setup = (_, ctx) => {
-        const { attrs: { __pageId, __pagePath, __pageQuery, __pageInstance }, } = ctx;
+    component.setup = (props, ctx) => {
+        const { attrs: { __pageId, __pagePath, /*__pageQuery,*/ __pageInstance }, } = ctx;
         if (('production' !== 'production')) {
             console.log(formatLog(__pagePath, 'setup'));
         }
         const instance = getCurrentInstance();
+        instance.$dialogPages = [];
         const pageVm = instance.proxy;
         initPageVm(pageVm, __pageInstance);
-        addCurrentPage(initScope(__pageId, pageVm, __pageInstance));
+        if (getPage$BasePage(pageVm).openType !== 'openDialogPage') {
+            addCurrentPage(initScope(__pageId, pageVm, __pageInstance));
+        }
         {
             onMounted(() => {
                 nextTick(() => {
@@ -11703,7 +12757,7 @@ function setupPage(component) {
             });
         }
         if (oldSetup) {
-            return oldSetup(__pageQuery, ctx);
+            return oldSetup(props, ctx);
         }
     };
     return component;
@@ -11738,12 +12792,12 @@ function createVuePage(__pageId, __pagePath, __pageQuery, __pageInstance, pageOp
     const pageNode = createPageNode(__pageId, pageOptions, true);
     const app = getVueApp();
     const component = pagesMap.get(__pagePath)();
-    const mountPage = (component) => app.mountPage(component, {
+    const mountPage = (component) => app.mountPage(component, extend({
         __pageId,
         __pagePath,
         __pageQuery,
         __pageInstance,
-    }, pageNode);
+    }, __pageQuery), pageNode);
     if (isPromise(component)) {
         return component.then((component) => mountPage(component));
     }
@@ -11804,6 +12858,8 @@ function initWebviewEvent(webview) {
             invokeHook(id, hook, e);
         });
     });
+    // TODO onWebviewClose
+    onWebviewResize(webview);
 }
 
 function initWebview(webview, path, query, routeMeta) {
@@ -11821,6 +12877,27 @@ function createWebview(options) {
 function getStatusbarHeight() {
     // 使用安全区高度，以适配小窗模式
     return plus.navigator.getSafeAreaInsets().top;
+}
+let lastStatusBarStyle;
+function setStatusBarStyle(statusBarStyle) {
+    if (!statusBarStyle) {
+        const page = getCurrentPage();
+        if (!page) {
+            return;
+        }
+        statusBarStyle = page.$page.statusBarStyle;
+        if (!statusBarStyle || statusBarStyle === lastStatusBarStyle) {
+            return;
+        }
+    }
+    if (statusBarStyle === lastStatusBarStyle) {
+        return;
+    }
+    if (('production' !== 'production')) {
+        console.log(formatLog('setStatusBarStyle', statusBarStyle));
+    }
+    lastStatusBarStyle = statusBarStyle;
+    plus.navigator.setStatusBarStyle(statusBarStyle);
 }
 
 function registerPage({ url, path, query, openType, webview, nvuePageVm, eventChannel, }) {
@@ -11922,7 +12999,33 @@ function _navigateTo({ url, path, query, events, aniType, aniDuration, }) {
         showWebview(registerPage({ url, path, query, openType: 'navigateTo', eventChannel }), aniType, aniDuration, () => {
             resolve({ eventChannel });
         });
-        // TODO setStatusBarStyle()
+        setStatusBarStyle();
+    });
+}
+
+function closeWebview(webview, animationType, animationDuration) {
+    if (webview.__preload__) {
+        webview.hide(animationType, animationDuration);
+    }
+    else {
+        webview.close(animationType, animationDuration);
+    }
+}
+function backWebview(webview, callback) {
+    const children = webview.children();
+    if (!children || !children.length) {
+        // 无子 webview
+        return callback();
+    }
+    // 支持且仅支持一个子webview
+    const childWebview = children[0];
+    childWebview.canBack(({ canBack }) => {
+        if (canBack) {
+            childWebview.back(); // webview 返回
+        }
+        else {
+            callback();
+        }
     });
 }
 
@@ -11997,7 +13100,7 @@ function back(delta, animationType, animationDuration) {
         pages
             .slice(len - delta, len)
             .forEach((page) => removePage(page));
-        // TODO setStatusBarStyle()
+        setStatusBarStyle();
         // 前一个页面触发 onShow
         invokeHook(ON_SHOW);
     };
@@ -12055,7 +13158,7 @@ function _redirectTo({ url, path, query, }) {
             }
             resolve(undefined);
         });
-        // TODO setStatusBarStyle()
+        setStatusBarStyle();
     });
 }
 
@@ -12088,7 +13191,7 @@ function _reLaunch({ url, path, query }) {
             pages.forEach((page) => closePage(page, 'none'));
             resolve(undefined);
         });
-        // TODO setStatusBarStyle()
+        setStatusBarStyle();
     });
 }
 
@@ -12130,11 +13233,12 @@ function _switchTab({ url, path, query, }) {
                 }
             });
             removePage(currentPage);
-            if (currentPage.$page.openType === 'redirectTo') {
-                closeWebview(currentPage.$getAppWebview(), ANI_CLOSE, ANI_DURATION);
+            if (currentPage.$page.openType ===
+                'redirectTo') {
+                closeWebview$1(currentPage.$getAppWebview(), ANI_CLOSE, ANI_DURATION);
             }
             else {
-                closeWebview(currentPage.$getAppWebview(), 'auto');
+                closeWebview$1(currentPage.$getAppWebview(), 'auto');
             }
         }
         else {
@@ -12173,7 +13277,7 @@ function _switchTab({ url, path, query, }) {
             if (callOnShow && !webview.__preload__) {
                 invokeHook(tabBarPage, ON_SHOW);
             }
-            // TODO setStatusBarStyle()
+            setStatusBarStyle();
             resolve(undefined);
         }
         else {
@@ -12183,58 +13287,352 @@ function _switchTab({ url, path, query, }) {
                 query,
                 openType: 'switchTab',
             }), 'none', 0, () => {
-                // TODO setStatusBarStyle()
+                setStatusBarStyle();
                 resolve(undefined);
             }, 70);
         }
     });
 }
 
-const pluginDefines = {};
-function registerUTSPlugin(name, define) {
-    pluginDefines[name] = define;
+// @ts-nocheck
+// TODO 优化此处代码，此页面无对应的css
+const LocationPickerPage = {
+    data() {
+        return {
+            keyword: '',
+            latitude: 0,
+            longitude: 0,
+            loaded: false,
+            channel: void 0,
+            closed: false,
+        };
+    },
+    onLoad(e) {
+        this.latitude = e.latitude;
+        this.longitude = e.longitude;
+        this.keyword = e.keyword;
+        this.loaded = true;
+        this.channel = this.getOpenerEventChannel();
+    },
+    onUnload() {
+        if (this.closed) {
+            return;
+        }
+        this.channel.emit('close', {});
+    },
+    methods: {
+        onClose(e) {
+            this.closed = true;
+            this.channel.emit('close', e.detail);
+            uni.navigateBack();
+        },
+    },
+    render: function (_ctx, _cache, $props, $setup, $data, $options) {
+        return $data.loaded
+            ? (openBlock(),
+                createElementBlock('location-picker', {
+                    key: 0,
+                    style: { width: '100%', height: '100%' },
+                    latitude: $data.latitude,
+                    longitude: $data.longitude,
+                    keyword: $data.keyword,
+                    onClose: _cache[0] ||
+                        (_cache[0] = (...args) => $options.onClose && $options.onClose(...args)),
+                }, null, 40, ['latitude', 'longitude', 'keyword']))
+            : createCommentVNode('v-if', true);
+    },
+};
+const ROUTE_LOCATION_PICKER_PAGE = '__uniappchooselocation';
+const initLocationPickerPageOnce = once(() => {
+    definePage(ROUTE_LOCATION_PICKER_PAGE, LocationPickerPage);
+    __uniRoutes.push({
+        meta: {
+            navigationBar: {
+                style: 'custom',
+            },
+            isNVue: false,
+            route: ROUTE_LOCATION_PICKER_PAGE,
+        },
+        path: '/' + ROUTE_LOCATION_PICKER_PAGE,
+    });
+});
+
+const chooseLocation = defineAsyncApi(API_CHOOSE_LOCATION, (args, { resolve, reject }) => {
+    initLocationPickerPageOnce();
+    const { keyword = '', latitude = '', longitude = '' } = args;
+    uni.navigateTo({
+        url: '/' +
+            ROUTE_LOCATION_PICKER_PAGE +
+            '?keyword=' +
+            keyword +
+            '&latitude=' +
+            latitude +
+            '&longitude=' +
+            longitude,
+        events: {
+            close: (res) => {
+                if (res && res.latitude) {
+                    resolve(res);
+                }
+                else {
+                    reject('cancel');
+                }
+            },
+        },
+        fail: (err) => {
+            reject(err.errMsg || 'cancel');
+        },
+    });
+}, ChooseLocationProtocol);
+
+// @ts-nocheck
+// TODO 优化此处代码，此页面无对应的css
+const LocationViewPage = {
+    data() {
+        return {
+            latitude: 0,
+            longitude: 0,
+            loaded: false,
+        };
+    },
+    onLoad(e) {
+        this.latitude = e.latitude;
+        this.longitude = e.longitude;
+        this.loaded = true;
+    },
+    methods: {},
+    render: function (_ctx, _cache, $props, $setup, $data, $options) {
+        return $data.loaded
+            ? (openBlock(),
+                createElementBlock('location-view', {
+                    key: 0,
+                    style: { width: '100%', height: '100%' },
+                    latitude: $data.latitude,
+                    longitude: $data.longitude,
+                }, null, 40, ['latitude', 'longitude']))
+            : createCommentVNode('v-if', true);
+    },
+};
+const ROUTE_LOCATION_VIEW_PAGE = '__uniappopenlocation';
+const initLocationViewPageOnce = once(() => {
+    definePage(ROUTE_LOCATION_VIEW_PAGE, LocationViewPage);
+    __uniRoutes.push({
+        meta: {
+            navigationBar: {
+                style: 'custom',
+            },
+            isNVue: false,
+            route: ROUTE_LOCATION_VIEW_PAGE,
+        },
+        path: '/' + ROUTE_LOCATION_VIEW_PAGE,
+    });
+});
+
+const openLocation = defineAsyncApi(API_OPEN_LOCATION, (args, { resolve, reject }) => {
+    initLocationViewPageOnce();
+    const { latitude = '', longitude = '' } = args;
+    uni.navigateTo({
+        url: '/' +
+            ROUTE_LOCATION_VIEW_PAGE +
+            '?latitude=' +
+            latitude +
+            '&longitude=' +
+            longitude,
+        success: (res) => {
+            resolve();
+        },
+        fail: (err) => {
+            reject(err.errMsg || 'cancel');
+        },
+    });
+}, OpenLocationProtocol, OpenLocationOptions);
+
+function getLocationSuccess(type, position, resolve) {
+    const coords = position.coords;
+    resolve({
+        type,
+        altitude: coords.altitude || 0,
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        speed: coords.speed,
+        accuracy: coords.accuracy,
+        address: position.address,
+        errMsg: 'getLocation:ok',
+    });
 }
-function requireUTSPlugin(name) {
-    const define = pluginDefines[name];
-    if (!define) {
-        console.error(`${name} is not found`);
-    }
-    return define;
+const getLocation = defineAsyncApi(API_GET_LOCATION, ({ type = 'wgs84', geocode = false, altitude = false, highAccuracyExpireTime, isHighAccuracy = false, }, { resolve, reject }) => {
+    plus.geolocation.getCurrentPosition((position) => {
+        getLocationSuccess(type, position, resolve);
+    }, (e) => {
+        // 坐标地址解析失败
+        if (e.code === 1501) {
+            getLocationSuccess(type, e, resolve);
+            return;
+        }
+        reject('getLocation:fail ' + e.message);
+    }, {
+        geocode: geocode,
+        enableHighAccuracy: isHighAccuracy || altitude,
+        timeout: highAccuracyExpireTime,
+        coordsType: type,
+    });
+}, GetLocationProtocol, GetLocationOptions);
+function subscribeGetLocation() {
+    registerServiceMethod(API_GET_LOCATION, (args, resolve) => {
+        getLocation({
+            type: args.type,
+            altitude: args.altitude,
+            highAccuracyExpireTime: args.highAccuracyExpireTime,
+            isHighAccuracy: args.isHighAccuracy,
+            success(res) {
+                resolve({
+                    latitude: res.latitude,
+                    longitude: res.longitude,
+                    speed: res.speed,
+                    accuracy: res.accuracy,
+                    altitude: res.altitude,
+                    verticalAccuracy: res.verticalAccuracy,
+                    horizontalAccuracy: res.horizontalAccuracy,
+                });
+            },
+            fail(err) {
+                resolve({
+                    errMsg: err.errMsg || 'getLocation:fail',
+                });
+            },
+        });
+    });
 }
 
-// export * from './media/chooseImage'
-// export * from './media/chooseVideo'
-// export * from './media/getImageInfo'
-// export * from './media/getVideoInfo'
-// export * from './network/request'
-// export * from './network/uploadFile'
-// export * from './network/downloadFile'
+let started = false;
+let watchId = 0;
+const startLocationUpdate = defineAsyncApi(API_START_LOCATION_UPDATE, (options, { resolve, reject }) => {
+    watchId =
+        watchId ||
+            plus.geolocation.watchPosition((res) => {
+                started = true;
+                UniServiceJSBridge.invokeOnCallback(API_ON_LOCATION_CHANGE, res.coords);
+            }, (error) => {
+                if (!started) {
+                    reject(error.message);
+                    started = true;
+                }
+                UniServiceJSBridge.invokeOnCallback(API_ON_LOCATION_CHANGE_ERROR, {
+                    errMsg: `onLocationChange:fail ${error.message}`,
+                });
+            }, {
+                coordsType: options?.type,
+            });
+    setTimeout(resolve, 100);
+}, StartLocationUpdateProtocol, StartLocationUpdateOptions);
+const stopLocationUpdate = defineAsyncApi(API_STOP_LOCATION_UPDATE, (_, { resolve }) => {
+    if (watchId) {
+        plus.geolocation.clearWatch(watchId);
+        started = false;
+        watchId = 0;
+    }
+    resolve();
+});
+const onLocationChange = defineOnApi(API_ON_LOCATION_CHANGE, () => { });
+const offLocationChange = defineOffApi(API_OFF_LOCATION_CHANGE, () => { });
+const onLocationChangeError = defineOnApi(API_ON_LOCATION_CHANGE_ERROR, () => { });
+const offLocationChangeError = defineOffApi(API_OFF_LOCATION_CHANGE_ERROR, () => { });
+
+function operateWebView(id, pageId, type, data, operateMapCallback) {
+    UniServiceJSBridge.invokeViewMethod('webview.' + id, {
+        type,
+        data,
+    }, pageId, operateMapCallback);
+}
+// TODO 完善类型定义，规范化。目前非uni-app-x仅鸿蒙支持
+function createWebviewContext(id, componentInstance) {
+    const pageId = getPageIdByVm(componentInstance);
+    if (pageId) {
+        return {
+            evalJs(jsCode) {
+                operateWebView(id, pageId, 'evalJs', {
+                    jsCode,
+                });
+            },
+            back() {
+                operateWebView(id, pageId, 'back');
+            },
+            forward() {
+                operateWebView(id, pageId, 'forward');
+            },
+            reload() {
+                operateWebView(id, pageId, 'reload');
+            },
+            stop() {
+                operateWebView(id, pageId, 'stop');
+            },
+        };
+    }
+    else {
+        UniServiceJSBridge.emit(ON_ERROR, 'createWebviewContext:fail');
+    }
+}
+
+const pageScrollTo = defineAsyncApi(API_PAGE_SCROLL_TO, (options, { resolve }) => {
+    const pageId = getPageIdByVm(getCurrentPageVm());
+    UniServiceJSBridge.invokeViewMethod(API_PAGE_SCROLL_TO, options, pageId, resolve);
+}, PageScrollToProtocol, PageScrollToOptions);
 
 var uni$1 = {
   __proto__: null,
+  addInterceptor: addInterceptor,
+  arrayBufferToBase64: arrayBufferToBase64,
+  base64ToArrayBuffer: base64ToArrayBuffer,
   canIUse: canIUse,
   canvasGetImageData: canvasGetImageData,
   canvasPutImageData: canvasPutImageData,
   canvasToTempFilePath: canvasToTempFilePath,
+  chooseLocation: chooseLocation,
+  createAnimation: createAnimation,
   createCanvasContext: createCanvasContext,
+  createIntersectionObserver: createIntersectionObserver,
+  createMapContext: createMapContext,
+  createMediaQueryObserver: createMediaQueryObserver,
+  createSelectorQuery: createSelectorQuery,
   createVideoContext: createVideoContext,
+  createWebviewContext: createWebviewContext,
+  getEnterOptionsSync: getEnterOptionsSync,
+  getLaunchOptionsSync: getLaunchOptionsSync,
   getLocale: getLocale,
+  getLocation: getLocation,
+  getSelectedTextRange: getSelectedTextRange,
+  hideNavigationBarLoading: hideNavigationBarLoading,
   hideTabBar: hideTabBar,
   hideTabBarRedDot: hideTabBarRedDot,
+  interceptors: interceptors,
+  loadFontFace: loadFontFace,
   navigateBack: navigateBack,
   navigateTo: navigateTo,
+  offKeyboardHeightChange: offKeyboardHeightChange,
+  offLocationChange: offLocationChange,
+  offLocationChangeError: offLocationChangeError,
+  onKeyboardHeightChange: onKeyboardHeightChange,
   onLocaleChange: onLocaleChange,
+  onLocationChange: onLocationChange,
+  onLocationChangeError: onLocationChangeError,
+  onWindowResize: onWindowResize,
+  openLocation: openLocation,
+  pageScrollTo: pageScrollTo,
   reLaunch: reLaunch,
   redirectTo: redirectTo,
-  registerUTSPlugin: registerUTSPlugin,
+  removeInterceptor: removeInterceptor,
   removeTabBarBadge: removeTabBarBadge,
-  requireUTSPlugin: requireUTSPlugin,
   setLocale: setLocale,
+  setNavigationBarColor: setNavigationBarColor,
+  setNavigationBarTitle: setNavigationBarTitle,
   setTabBarBadge: setTabBarBadge,
   setTabBarItem: setTabBarItem,
   setTabBarStyle: setTabBarStyle,
+  showNavigationBarLoading: showNavigationBarLoading,
   showTabBar: showTabBar,
   showTabBarRedDot: showTabBarRedDot,
+  startLocationUpdate: startLocationUpdate,
+  stopLocationUpdate: stopLocationUpdate,
   switchTab: switchTab
 };
 
@@ -12431,44 +13829,44 @@ function onMessage(pageId, arg) {
         }));
 }
 
-let index$1 = 0;
-function subscribeBase64ToTempFilePath() {
-    registerServiceMethod(BASE64_TO_TEMP_FILE_PATH, (args, resolve) => {
-        const { dataURL, dirname } = args;
-        const id = `${Date.now()}_${index$1++}`;
-        const array = dataURL.split(',');
-        const scheme = array[0];
-        const base64 = array[1];
-        const format = (scheme.match(/data:image\/(\S+?);/) || [
-            '',
-            'png',
-        ])[1].replace('jpeg', 'jpg');
-        const fileName = `${id}.${format}`;
-        const tempFilePath = `${dirname}/${fileName}`;
-        try {
-            if (!fs.accessSync(dirname)) {
-                fs.mkdirSync(dirname);
-            }
+function onWxsInvokeCallMethod({ nodeId, ownerId, method, args, }, pageId) {
+    const node = findNodeById(nodeId, parseInt(pageId));
+    if (!node) {
+        if (('production' !== 'production')) {
+            console.error(formatLog('Wxs', 'CallMethod', nodeId, 'not found'));
         }
-        catch (error) {
-            resolve(error);
-            return;
+        return;
+    }
+    const vm = resolveOwnerVm(ownerId, node.__vueParentComponent);
+    if (!vm) {
+        if (('production' !== 'production')) {
+            console.error(formatLog('Wxs', 'CallMethod', 'vm not found'));
         }
-        fs.createStream(tempFilePath, 'w', (err, stream) => {
-            if (err) {
-                stream.closeSync();
-                return resolve(err);
-            }
-            stream.write(buffer.from(base64, 'base64').buffer, (err) => {
-                if (err) {
-                    stream.closeSync();
-                    return resolve(err);
-                }
-                stream.closeSync();
-                return resolve({ tempFilePath: `file://${tempFilePath}` });
-            });
-        });
-    });
+        return;
+    }
+    if (!vm[method]) {
+        if (('production' !== 'production')) {
+            console.error(formatLog('Wxs', 'CallMethod', method, ' not found'));
+        }
+        return;
+    }
+    vm[method](args);
+}
+function resolveOwnerVm(ownerId, vm) {
+    if (!vm) {
+        return null;
+    }
+    if (vm.uid === ownerId) {
+        return vm.proxy;
+    }
+    let parent = vm.parent;
+    while (parent) {
+        if (parent.uid === ownerId) {
+            return parent.proxy;
+        }
+        parent = parent.parent;
+    }
+    return vm.proxy;
 }
 
 function initSubscribeHandlers() {
@@ -12486,8 +13884,8 @@ function initSubscribeHandlers() {
     subscribeNavigator();
     subscribe(WEBVIEW_INSERTED, onWebviewInserted);
     subscribe(WEBVIEW_REMOVED, onWebviewRemoved);
-    subscribeBase64ToTempFilePath();
-    // TODO subscribe(ON_WXS_INVOKE_CALL_METHOD, onWxsInvokeCallMethod)
+    subscribeGetLocation();
+    subscribe(ON_WXS_INVOKE_CALL_METHOD, onWxsInvokeCallMethod);
     const routeOptions = getRouteOptions(addLeadingSlash(__uniConfig.entryPagePath));
     if (routeOptions) {
         // 防止首页 webview 初始化过早， service 还未开始监听
@@ -12506,7 +13904,11 @@ function initGlobalEvent() {
         // TODO options
         emit(ON_APP_ENTER_FOREGROUND, {});
     });
-    // TODO KeyboardHeightChange
+    plusGlobalEvent.addEventListener('KeyboardHeightChange', function (event) {
+        emit(ON_KEYBOARD_HEIGHT_CHANGE, {
+            height: event.height,
+        });
+    });
     plusGlobalEvent.addEventListener('plusMessage', subscribePlusMessage);
 }
 
@@ -12619,4 +14021,4 @@ var index = {
     UniServiceJSBridge: UniServiceJSBridge$1,
 };
 
-export { Emitter, UniServiceJSBridge$1 as UniServiceJSBridge, __uniConfig$1 as __uniConfig, addIntersectionObserver, index as default, defineAsyncApi, defineOffApi, defineOnApi, defineSyncApi, defineTaskApi, disableEnumerable, extend, getCurrentPage, getCurrentPageId, getCurrentPageMeta, getCurrentPageVm, getEnv, getPageIdByVm, getRealPath, getType, hasOwn$1 as hasOwn, isArray, isFunction, isPlainObject, isString, removeIntersectionObserver, requestComponentInfo, resolveComponentInstance, setUniRuntime };
+export { Emitter, UniServiceJSBridge$1 as UniServiceJSBridge, __uniConfig$1 as __uniConfig, addIntersectionObserver, index as default, defineAsyncApi, defineOffApi, defineOnApi, defineSyncApi, defineTaskApi, disableEnumerable, extend, getCurrentPage, getCurrentPageId, getCurrentPageMeta, getCurrentPageVm, getEnv, getPageIdByVm, getRealPath, getType, hasOwn$1 as hasOwn, isArray, isFunction, isPlainObject, isString, registerServiceMethod, removeIntersectionObserver, requestComponentInfo, resolveComponentInstance, setUniRuntime };

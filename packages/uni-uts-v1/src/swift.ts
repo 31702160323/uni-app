@@ -4,13 +4,17 @@ import {
   type RunDevOptions,
   type RunProdOptions,
   type ToSwiftOptions,
+  copyPlatformFiles,
   genComponentsCode,
   genUTSPlatformResource,
   getCompilerServer,
   getUTSCompiler,
   isColorSupported,
   moveRootIndexSourceMap,
+  normalizeUTSResult,
   parseSwiftPackageWithPluginId,
+  resolveBundleInputFileName,
+  resolveBundleInputRoot,
   resolveConfigProvider,
   resolveIOSDir,
   resolvePackage,
@@ -184,7 +188,15 @@ export async function runSwiftDev(
     if (isCli) {
       projectPath = path.resolve(projectPath, '..')
     }
+
     const { id, is_uni_modules } = resolvePackage(filename)!
+
+    const platformFiles = copyPlatformFiles(
+      path.resolve(inputDir, 'uni_modules', id, 'utssdk', 'app-ios'),
+      path.resolve(outputDir, 'uni_modules', id, 'utssdk', 'app-ios'),
+      ['.swift']
+    )
+
     const { code, msg } = await compilerServer.compile({
       projectPath,
       isCli,
@@ -193,6 +205,7 @@ export async function runSwiftDev(
       utsPath: resolveCompilerUTSPath(inputDir, is_uni_modules),
       swiftPath: resolveCompilerSwiftPath(outputDir, is_uni_modules),
     })
+    result.deps = [...(result.deps || []), ...platformFiles]
     result.code = code
     result.msg = msg
     result.changed = [swiftFile]
@@ -236,8 +249,8 @@ export async function compile(
   const componentsCode = genComponentsCode(filename, components, isX)
   const { namespace, id: pluginId } = parseSwiftPackage(filename)
   const input: UTSInputOptions = {
-    root: inputDir,
-    filename,
+    root: resolveBundleInputRoot('app-ios', inputDir),
+    filename: resolveBundleInputFileName('app-ios', filename),
     pluginId,
     paths: {},
     uniModules,
@@ -248,7 +261,12 @@ export async function compile(
       input.fileContent = componentsCode
     } else {
       input.fileContent =
-        fs.readFileSync(filename, 'utf8') + `\n` + componentsCode
+        fs.readFileSync(
+          resolveBundleInputFileName('app-ios', filename),
+          'utf8'
+        ) +
+        `\n` +
+        componentsCode
     }
   } else {
     // uts文件不存在，且也无组件
@@ -295,7 +313,7 @@ export async function compile(
       package: '',
       result,
     })
-  return result
+  return normalizeUTSResult('app-ios', result)
 }
 
 const deps = ['Info.plist', 'config.json']

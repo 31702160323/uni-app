@@ -26,7 +26,9 @@ import {
   runByHBuilderX,
 } from './shared'
 import type { ClassMeta } from './code'
+import { uvueOutDir } from './uvue'
 
+type UTSPluginPlatform = 'app-android' | 'app-ios' | 'app-harmony'
 interface ToOptions {
   inputDir: string
   outputDir: string
@@ -117,6 +119,29 @@ export function resolvePackage(filename: string) {
   }
 }
 
+export function copyPlatformFiles(
+  utsInputDir: string,
+  utsOutputDir: string,
+  extname: string[]
+) {
+  const files: string[] = []
+  if (fs.existsSync(utsInputDir)) {
+    fs.copySync(utsInputDir, utsOutputDir, {
+      filter(src) {
+        if (fs.statSync(src).isDirectory()) {
+          return true
+        }
+        if (extname.includes(path.extname(src))) {
+          files.push(src)
+          return true
+        }
+        return false
+      },
+    })
+  }
+  return files
+}
+
 export interface UTSPlatformResourceOptions {
   isX: boolean
   pluginId: string
@@ -131,6 +156,7 @@ export interface UTSPlatformResourceOptions {
   provider?: { name: string; service: string; class: string }
   uniModules: string[]
 }
+
 export function genUTSPlatformResource(
   filename: string,
   options: UTSPlatformResourceOptions
@@ -140,11 +166,16 @@ export function genUTSPlatformResource(
   const utsInputDir = resolveUTSPlatformDir(filename, platform)
   const utsOutputDir = resolveUTSPlatformDir(platformFile, platform)
 
+  const extname: string[] =
+    options.extname === '.kt' ? ['.kt', '.java'] : [options.extname]
   // 拷贝所有非uts,vue文件及目录
   if (fs.existsSync(utsInputDir)) {
     fs.copySync(utsInputDir, utsOutputDir, {
       filter(src) {
         if (src.endsWith('config.json')) {
+          return false
+        }
+        if (extname.includes(path.extname(src))) {
           return false
         }
         return !['.uts', '.vue'].includes(path.extname(src))
@@ -196,7 +227,9 @@ export function genUTSPlatformResource(
         overwrite: true,
       }
     )
+    copyPlatformFiles(utsInputDir, path.join(utsOutputDir, 'src'), extname)
   }
+
   if (options.result.chunks) {
     options.result.chunks.forEach((chunk) => {
       const chunkFile = path.resolve(utsOutputDir, chunk)
@@ -673,12 +706,21 @@ export function parseInjectModules(
   return [...modules]
 }
 
+function readExtApiModulesJson() {
+  const json = require('../lib/ext-api/modules.json')
+  if (!json['uni-canvas']) {
+    json['uni-canvas'] = {}
+  }
+  json['uni-canvas']['components'] = ['canvas']
+  return json
+}
+
 export function parseExtApiModules() {
-  return normalizeExtApiModules(require('../lib/ext-api/modules.json'))
+  return normalizeExtApiModules(readExtApiModulesJson())
 }
 
 export function parseExtApiProviders() {
-  const modules = require('../lib/ext-api/modules.json')
+  const modules = readExtApiModulesJson()
   const providers: {
     [name: string]: {
       service: string
@@ -782,6 +824,13 @@ export function resolveConfigProvider(
   }
 }
 
+export function formatUniProviderName(service: string) {
+  if (service === 'oauth') {
+    service = 'OAuth'
+  }
+  return `Uni${capitalize(camelize(service))}Provider`
+}
+
 function formatExtApiProviderName(service: string, name: string) {
   if (service === 'oauth') {
     service = 'OAuth'
@@ -797,4 +846,86 @@ export function requireUniHelpers() {
     'uni_helpers/lib/bytenode'
   ))
   return require(path.join(process.env.UNI_HBUILDERX_PLUGINS, 'uni_helpers'))
+}
+
+export function resolveBundleInputRoot(
+  platform: UTSPluginPlatform,
+  root: string
+) {
+  if (
+    process.env.UNI_APP_X_TSC === 'true' &&
+    // 云端uni_modules编译，传入的已经是真实地址
+    isNormalCompileTarget()
+  ) {
+    return uvueOutDir(platform)
+  }
+  return root
+}
+
+export function resolveBundleInputFileName(
+  platform: UTSPluginPlatform,
+  fileName: string
+) {
+  if (
+    process.env.UNI_APP_X_TSC === 'true' &&
+    // 云端uni_modules编译，传入的已经是真实地址 uni-cli-shared/vite/cloud.ts:190
+    isNormalCompileTarget()
+  ) {
+    const uvueDir = uvueOutDir(platform)
+    if (!fileName.startsWith(uvueDir)) {
+      return normalizePath(
+        path.resolve(
+          uvueDir,
+          path.relative(process.env.UNI_INPUT_DIR, fileName)
+        )
+      )
+    }
+  }
+  return fileName
+}
+
+export function resolveUVueFileName(
+  platform: 'app-android' | 'app-ios',
+  fileName: string
+) {
+  if (!fileName) {
+    return fileName
+  }
+  if (process.env.UNI_APP_X_TSC === 'true') {
+    const inputDir = normalizePath(process.env.UNI_INPUT_DIR)
+    fileName = normalizePath(fileName)
+    if (fileName.startsWith(inputDir)) {
+      return normalizePath(
+        path.resolve(uvueOutDir(platform), path.relative(inputDir, fileName))
+      )
+    }
+  }
+  return fileName
+}
+
+export function normalizeUTSResult(
+  platform: UTSPluginPlatform,
+  result: UTSResult
+) {
+  if (process.env.UNI_APP_X_TSC === 'true') {
+    if (result.deps && result.deps.length) {
+      const uvueDir = normalizePath(uvueOutDir(platform))
+      result.deps = result.deps.map((file) => {
+        file = normalizePath(file)
+        if (file.startsWith(uvueDir)) {
+          return path.resolve(
+            process.env.UNI_INPUT_DIR,
+            path.relative(uvueDir, file)
+          )
+        }
+        return file
+      })
+    }
+  }
+  return result
+}
+
+export function isNormalCompileTarget() {
+  // 目前有特殊编译目标 uni_modules 和 ext-api
+  return !process.env.UNI_COMPILE_TARGET
 }

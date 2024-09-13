@@ -1,4 +1,9 @@
 import MagicString from 'magic-string'
+import type { BindingMetadata, SFCDescriptor } from '@vue/compiler-sfc'
+import {
+  addUniModulesExtApiComponents,
+  enableSourceMap,
+} from '@dcloudio/uni-cli-shared'
 import { analyzeScriptBindings } from './analyzeScriptBindings'
 import type { ScriptCompileContext } from './context'
 import { hasConsole, rewriteConsole } from './rewriteConsole'
@@ -6,6 +11,9 @@ import { hasDebugError, rewriteDebugError } from './rewriteDebugError'
 import { rewriteSourceMap } from './rewriteSourceMap'
 import { rewriteDefaultAST } from '../rewriteDefault'
 import { resolveDefineCode } from './utils'
+import { resolveGenTemplateCodeOptions } from '../../template'
+import { addExtApiComponents } from '../../../../../utils'
+import { genTemplateCode } from '../../../code/template'
 
 export function processNormalScript(
   ctx: ScriptCompileContext,
@@ -26,11 +34,14 @@ export function processNormalScript(
     const startLine = (ctx.descriptor.script!.loc.start.line || 1) - 1
     const startOffset = 0
 
-    rewriteDefaultAST(
-      scriptAst.body,
-      s,
-      resolveDefineCode(ctx.options.componentType!)
-    )
+    if (ctx.options.genDefaultAs) {
+      rewriteDefaultAST(
+        scriptAst.body,
+        s,
+        ctx.options.genDefaultAs,
+        resolveDefineCode(ctx.options.componentType!)
+      )
+    }
 
     if (
       process.env.NODE_ENV === 'development' ||
@@ -57,6 +68,10 @@ export function processNormalScript(
       })
     }
 
+    if (ctx.options.genDefaultAs) {
+      s.append(`\nexport default ${ctx.options.genDefaultAs}`)
+    }
+
     if (s.hasChanged()) {
       content = s.toString()
       // 需要合并旧的 sourcemap
@@ -80,4 +95,50 @@ export function processNormalScript(
     // babel syntax
     return script
   }
+}
+
+export function processTemplate(
+  sfc: SFCDescriptor,
+  {
+    relativeFilename,
+    bindingMetadata,
+    className,
+    rootDir,
+  }: {
+    relativeFilename: string
+    bindingMetadata?: BindingMetadata
+    className: string
+    rootDir: string
+  }
+) {
+  const options = resolveGenTemplateCodeOptions(
+    relativeFilename,
+    sfc.source,
+    sfc,
+    {
+      mode: 'module',
+      inline: !!sfc.scriptSetup,
+      className,
+      rootDir,
+      sourceMap: enableSourceMap(),
+      bindingMetadata,
+    }
+  )
+  const { code, preamble, elements, map } = genTemplateCode(sfc, options)
+
+  if (process.env.NODE_ENV === 'production') {
+    const components = elements.filter((element) => {
+      // 如果是UTS原生组件，则无需记录摇树
+      if (options.parseUTSComponent!(element, 'kotlin')) {
+        return false
+      }
+      return true
+    })
+    if (process.env.UNI_COMPILE_TARGET === 'uni_modules') {
+      addUniModulesExtApiComponents(relativeFilename, components)
+    } else {
+      addExtApiComponents(components)
+    }
+  }
+  return { code, map, preamble }
 }

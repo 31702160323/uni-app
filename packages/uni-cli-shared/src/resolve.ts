@@ -29,9 +29,11 @@ export function relativeFile(from: string, to: string) {
 }
 
 export const resolveMainPathOnce = once((inputDir: string) => {
-  const mainUTSPath = path.resolve(inputDir, 'main.uts')
-  if (fs.existsSync(mainUTSPath)) {
-    return normalizePath(mainUTSPath)
+  if (process.env.UNI_APP_X === 'true') {
+    const mainUTSPath = path.resolve(inputDir, 'main.uts')
+    if (fs.existsSync(mainUTSPath)) {
+      return normalizePath(mainUTSPath)
+    }
   }
   const mainTsPath = path.resolve(inputDir, 'main.ts')
   if (fs.existsSync(mainTsPath)) {
@@ -97,8 +99,15 @@ export function getBuiltInPaths() {
   return paths
 }
 
-export function resolveBuiltIn(path: string) {
-  return require.resolve(path, { paths: getBuiltInPaths() })
+export function resolveBuiltIn(module: string) {
+  if (
+    process.env.UNI_COMPILE_TARGET === 'ext-api' &&
+    process.env.UNI_APP_NEXT_WORKSPACE &&
+    module.startsWith('@dcloudio/')
+  ) {
+    return path.resolve(process.env.UNI_APP_NEXT_WORKSPACE, 'packages', module)
+  }
+  return require.resolve(module, { paths: getBuiltInPaths() })
 }
 
 export function resolveVueI18nRuntime() {
@@ -127,15 +136,25 @@ export function resolveComponentsLibPath() {
           dir
         )
       } catch (e) {
-        componentsLibPath = path.join(
-          resolveWithSymlinks(
-            '@dcloudio/uni-components/package.json',
-            process.cwd()
-          ),
-          dir
-        )
+        try {
+          componentsLibPath = path.join(
+            resolveWithSymlinks(
+              '@dcloudio/uni-components/package.json',
+              process.cwd()
+            ),
+            dir
+          )
+        } catch (e) {
+          console.log(e)
+        }
       }
     }
   }
   return componentsLibPath
+}
+
+export function resolveComponentsLibDirs() {
+  return process.env.UNI_COMPILE_TARGET === 'ext-api'
+    ? []
+    : [resolveComponentsLibPath()]
 }

@@ -4,12 +4,16 @@ import {
   type UniVitePlugin,
   buildUniExtApis,
   camelize,
+  formatExtApiProviderName,
   getCurrentCompiledUTSPlugins,
   getUniExtApiProviderRegisters,
+  isNormalCompileTarget,
+  parseManifestJsonOnce,
   parseUniExtApi,
   resolveUTSCompiler,
 } from '@dcloudio/uni-cli-shared'
 import type { OutputChunk } from 'rollup'
+import StandaloneExtApis from './standalone-ext-apis.json'
 
 const commondGlobals: Record<string, string> = {
   vue: 'Vue',
@@ -97,7 +101,7 @@ export function uniAppHarmonyPlugin(): UniVitePlugin {
       }
     },
     async writeBundle() {
-      if (process.env.UNI_COMPILE_TARGET === 'uni_modules') {
+      if (!isNormalCompileTarget()) {
         return
       }
       // x 上暂时编译所有uni ext api，不管代码里是否调用了
@@ -106,10 +110,85 @@ export function uniAppHarmonyPlugin(): UniVitePlugin {
   }
 }
 
-function genAppHarmonyIndex(inputDir: string, utsPlugins: Set<string>) {
-  if (!process.env.UNI_APP_HARMONY_PROJECT_PATH) {
-    return
+/**
+ * extapi分为如下几种
+ * 1. 内部extapi，编译到uni.api.ets内
+ * 2. 内部provider，编译到uni.api.ets内
+ * 3. 内部extapi，发布到ohpm
+ * 4. 内部provider，发布到ohpm
+ * 5. 用户自定义extapi
+ * 6. 用户自定义provider
+ */
+
+interface IRelatedProvider {
+  service: string
+  name: string
+}
+
+// 仅存放重命名的provider service
+const SupportedProviderService = {
+  oauth: {},
+  payment: {
+    weixin: 'wxpay',
+  },
+}
+
+/**
+ * 获取manifest.json中勾选的provider
+ */
+function getRelatedProviders(inputDir: string): IRelatedProvider[] {
+  const manifest = parseManifestJsonOnce(inputDir)
+  const providers: IRelatedProvider[] = []
+  const sdkConfigs = manifest?.['app-plus']?.distribute?.sdkConfigs
+  if (!sdkConfigs) {
+    return providers
   }
+  for (const service in sdkConfigs) {
+    if (Object.prototype.hasOwnProperty.call(sdkConfigs, service)) {
+      const ProviderNameMap = SupportedProviderService[service]
+      if (!ProviderNameMap) {
+        continue
+      }
+      const relatedProviders = sdkConfigs[service]
+      for (const name in relatedProviders) {
+        if (Object.prototype.hasOwnProperty.call(relatedProviders, name)) {
+          const providerName = ProviderNameMap[name]
+          providers.push({
+            service,
+            name: providerName || name,
+          })
+        }
+      }
+    }
+  }
+  return providers
+}
+
+const SupportedModules = {
+  FacialRecognitionVerify: 'uni-facialRecognitionVerify',
+}
+
+// 获取uni_modules中的相关模块
+function getRelatedModules(inputDir: string): string[] {
+  const manifest = parseManifestJsonOnce(inputDir)
+  const modules: string[] = []
+  const manifestModules = manifest?.['app-plus']?.modules
+  if (!manifestModules) {
+    return modules
+  }
+  for (const manifestModule in manifestModules) {
+    if (Object.prototype.hasOwnProperty.call(manifestModules, manifestModule)) {
+      const moduleName = SupportedModules[manifestModule]
+      if (!moduleName) {
+        continue
+      }
+      modules.push(moduleName)
+    }
+  }
+  return modules
+}
+
+function genAppHarmonyIndex(inputDir: string, utsPlugins: Set<string>) {
   const uniModulesDir = path.resolve(inputDir, 'uni_modules')
   const importCodes: string[] = []
   const extApiCodes: string[] = []
@@ -128,30 +207,92 @@ function genAppHarmonyIndex(inputDir: string, utsPlugins: Set<string>) {
         if (Array.isArray(inject) && inject.length > 1) {
           const apiName = inject[1]
           importCodes.push(
-            `import { ${inject[1]} } from './${plugin}/utssdk/app-harmony'`
+            `import { ${inject[1]} } from '@uni_modules/${plugin}'`
           )
           extApiCodes.push(`uni.${apiName} = ${apiName}`)
         }
       })
     } else {
       const ident = camelize(plugin)
-      importCodes.push(
-        `import * as ${ident} from './${plugin}/utssdk/app-harmony'`
-      )
+      importCodes.push(`import * as ${ident} from '@uni_modules/${plugin}'`)
       registerCodes.push(
         `uni.registerUTSPlugin('uni_modules/${plugin}', ${ident})`
       )
     }
   })
 
+  const relatedProviders = getRelatedProviders(inputDir)
+  const relatedModules = getRelatedModules(inputDir)
+
+  const projectDeps: {
+    moduleSpecifier: string
+    plugin: string
+    source: 'local' | 'ohpm'
+  }[] = []
+
+  relatedModules.forEach((module) => {
+    if (utsPlugins.has(module)) {
+      projectDeps.push({
+        moduleSpecifier: `@uni_modules/${module}`,
+        plugin: module,
+        source: 'local',
+      })
+    } else {
+      projectDeps.push({
+        moduleSpecifier: `@uni_modules/${module}`,
+        plugin: module,
+        source: 'ohpm',
+      })
+    }
+    importCodes.push(`import '@uni_modules/${module}'`)
+  })
+
   const importProviderCodes: string[] = []
   const registerProviderCodes: string[] = []
   const providers = getUniExtApiProviderRegisters()
-  providers.forEach((provider) => {
-    const parts = provider.class.split('.')
-    const className = parts[parts.length - 1]
+  const allProviders = providers.map((provider) => {
+    return {
+      service: provider.service,
+      name: provider.name,
+      moduleSpecifier: `@uni_modules/${provider.plugin}`,
+      plugin: provider.plugin,
+      source: 'local',
+    }
+  })
+
+  StandaloneExtApis.filter((item) => {
+    return item.type === 'provider'
+  }).forEach((extapi) => {
+    if (allProviders.find((item) => item.plugin === extapi.plugin)) {
+      return
+    }
+    const [_, service, provider] = extapi.plugin.split('-')
+    allProviders.push({
+      service,
+      name: provider,
+      moduleSpecifier: `@uni_modules/${extapi.plugin}`,
+      plugin: extapi.plugin,
+      source: 'ohpm',
+    })
+  })
+
+  relatedProviders.forEach((relatedProvider) => {
+    const provider = allProviders.find(
+      (item) =>
+        item.service === relatedProvider.service &&
+        item.name === relatedProvider.name
+    )
+    if (!provider) {
+      return
+    }
+    projectDeps.push({
+      moduleSpecifier: provider.moduleSpecifier,
+      plugin: provider.plugin,
+      source: provider.source as 'local' | 'ohpm',
+    })
+    const className = formatExtApiProviderName(provider.service, provider.name)
     importProviderCodes.push(
-      `import { ${className} } from './${provider.plugin}/utssdk/app-harmony'`
+      `import { ${className} } from '${provider.moduleSpecifier}'`
     )
     registerProviderCodes.push(
       `registerUniProvider('${provider.service}', '${provider.name}', new ${className}())`
@@ -159,31 +300,58 @@ function genAppHarmonyIndex(inputDir: string, utsPlugins: Set<string>) {
   })
   if (importProviderCodes.length) {
     importProviderCodes.unshift(
-      `import { registerUniProvider } from '../uni-app/lib/uni-api-shared'`
+      `import { registerUniProvider, uni } from '@dcloudio/uni-app-runtime'`
     )
     importCodes.push(...importProviderCodes)
     extApiCodes.push(...registerProviderCodes)
   }
 
-  fs.writeFileSync(
-    path.resolve(
-      resolveUTSCompiler().resolveAppHarmonyUniModulesRootDir(
-        process.env.UNI_APP_HARMONY_PROJECT_PATH
-      ),
-      'index.generated.ets'
-    ),
+  const uniModuleEntryDir =
+    resolveUTSCompiler().resolveAppHarmonyUniModulesEntryDir()
+  fs.outputFileSync(
+    path.resolve(uniModuleEntryDir, 'index.generated.ets'),
     `// This file is automatically generated by uni-app.
 // Do not modify this file -- YOUR CHANGES WILL BE ERASED!
 ${importCodes.join('\n')}
 
-export function initUniModules(uni: ESObject) {
-  initUniExtApi(uni)
+export function initUniModules() {
+  initUniExtApi()
   ${registerCodes.join('\n  ')}
 }
 
-function initUniExtApi(uni: ESObject) {
+function initUniExtApi() {
   ${extApiCodes.join('\n  ')}
 }
 `
+  )
+
+  const dependencies: Record<string, string> = {}
+  const modules: { name: string; srcPath: string }[] = []
+  projectDeps.forEach((dep) => {
+    // TODO 依赖版本绑定编译器版本
+    if (dep.source === 'local') {
+      const depPath = './uni_modules/' + dep.plugin
+      dependencies[dep.moduleSpecifier] = depPath
+      modules.push({
+        name: dep.moduleSpecifier
+          .replace(/@/g, '')
+          .replace(/\//g, '__')
+          .replace(/-/g, '_'),
+        srcPath: depPath,
+      })
+    } else {
+      dependencies[dep.moduleSpecifier] = '*'
+    }
+  })
+  // TODO 写入到用户项目的oh-package.json5、build-profile.json5内
+  fs.outputJSONSync(
+    path.resolve(uniModuleEntryDir, 'oh-package.json5'),
+    { dependencies },
+    { spaces: 2 }
+  )
+  fs.outputJSONSync(
+    path.resolve(uniModuleEntryDir, 'build-profile.json5'),
+    { modules },
+    { spaces: 2 }
   )
 }

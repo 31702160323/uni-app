@@ -45,7 +45,9 @@ export function uniAppCssPlugin(): Plugin {
           const { filename } = parseVueRequest(id)
           if (isVue(filename)) {
             return normalizeNodeModules(
-              path.relative(process.env.UNI_INPUT_DIR, filename) + '.style.uts'
+              (path.isAbsolute(filename)
+                ? path.relative(process.env.UNI_INPUT_DIR, filename)
+                : filename) + '.style.uts'
             )
           }
         },
@@ -83,11 +85,6 @@ export function uniAppCssPlugin(): Plugin {
       insertBeforePlugin(
         cssPlugin(config, {
           isAndroidX: true,
-          // android 不处理 css url
-          // createUrlReplacer:
-          //   process.env.UNI_COMPILE_TARGET === 'uni_modules'
-          //     ? createEncryptCssUrlReplacer
-          //     : undefined,
           getDescriptor: (filename) => {
             return getDescriptor(filename, descriptorOptions, false)
           },

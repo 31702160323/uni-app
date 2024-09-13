@@ -3,16 +3,16 @@
 exports[`defineEmits basic usage 1`] = `
 "export default defineComponent({
   emits: ['foo', 'bar'],
-  setup(__props: GenAnonymous) {
+  setup(__props): any | null {
 const __ins = getCurrentInstance()!;
-const _ctx = __ins.proxy as GenAnonymous;
+const _ctx = __ins.proxy;
 const _cache = __ins.renderCache;
 
 function myEmit(event: string, ...do_not_transform_spread: Array<any | null>) {
 __ins.emit(event, ...do_not_transform_spread)
 }
 
-return "INLINE_RENDER"
+return (): any | null => { return null }
 }
 
 })"
@@ -21,16 +21,16 @@ return "INLINE_RENDER"
 exports[`defineEmits w/ runtime options 1`] = `
 "export default defineComponent({
   emits: ['a', 'b'],
-  setup(__props: GenAnonymous) {
+  setup(__props): any | null {
 const __ins = getCurrentInstance()!;
-const _ctx = __ins.proxy as GenAnonymous;
+const _ctx = __ins.proxy;
 const _cache = __ins.renderCache;
 
 function emit(event: string, ...do_not_transform_spread: Array<any | null>) {
 __ins.emit(event, ...do_not_transform_spread)
 }
 
-return "INLINE_RENDER"
+return (): any | null => { return null }
 }
 
 })"
@@ -41,16 +41,16 @@ exports[`defineEmits w/ type (exported interface) 1`] = `
     
 export default defineComponent({
   emits: ["foo", "bar"],
-  setup(__props: GenAnonymous) {
+  setup(__props): any | null {
 const __ins = getCurrentInstance()!;
-const _ctx = __ins.proxy as GenAnonymous;
+const _ctx = __ins.proxy;
 const _cache = __ins.renderCache;
 
     function emit(event: string, ...do_not_transform_spread: Array<any | null>) {
 __ins.emit(event, ...do_not_transform_spread)
 }
     
-return "INLINE_RENDER"
+return (): any | null => { return null }
 }
 
 })"
@@ -61,16 +61,16 @@ exports[`defineEmits w/ type (exported type alias) 1`] = `
     
 export default defineComponent({
   emits: ["foo", "bar"],
-  setup(__props: GenAnonymous) {
+  setup(__props): any | null {
 const __ins = getCurrentInstance()!;
-const _ctx = __ins.proxy as GenAnonymous;
+const _ctx = __ins.proxy;
 const _cache = __ins.renderCache;
 
     function emit(event: string, ...do_not_transform_spread: Array<any | null>) {
 __ins.emit(event, ...do_not_transform_spread)
 }
     
-return "INLINE_RENDER"
+return (): any | null => { return null }
 }
 
 })"
@@ -81,16 +81,16 @@ exports[`defineEmits w/ type (interface ts type) 1`] = `
     
 export default defineComponent({
   emits: ['foo'],
-  setup(__props: GenAnonymous) {
+  setup(__props): any | null {
 const __ins = getCurrentInstance()!;
-const _ctx = __ins.proxy as GenAnonymous;
+const _ctx = __ins.proxy;
 const _cache = __ins.renderCache;
 
     function emit(event: string, ...do_not_transform_spread: Array<any | null>) {
 __ins.emit(event, ...do_not_transform_spread)
 }
     
-return "INLINE_RENDER"
+return (): any | null => { return null }
 }
 
 })"
@@ -102,16 +102,16 @@ exports[`defineEmits w/ type (interface w/ extends) 1`] = `
     
 export default defineComponent({
   emits: ["bar", "foo"],
-  setup(__props: GenAnonymous) {
+  setup(__props): any | null {
 const __ins = getCurrentInstance()!;
-const _ctx = __ins.proxy as GenAnonymous;
+const _ctx = __ins.proxy;
 const _cache = __ins.renderCache;
 
     function emit(event: string, ...do_not_transform_spread: Array<any | null>) {
 __ins.emit(event, ...do_not_transform_spread)
 }
     
-return "INLINE_RENDER"
+return (): any | null => { return null }
 }
 
 })"
@@ -122,16 +122,16 @@ exports[`defineEmits w/ type (interface) 1`] = `
     
 export default defineComponent({
   emits: ["foo", "bar"],
-  setup(__props: GenAnonymous) {
+  setup(__props): any | null {
 const __ins = getCurrentInstance()!;
-const _ctx = __ins.proxy as GenAnonymous;
+const _ctx = __ins.proxy;
 const _cache = __ins.renderCache;
 
     function emit(event: string, ...do_not_transform_spread: Array<any | null>) {
 __ins.emit(event, ...do_not_transform_spread)
 }
     
-return "INLINE_RENDER"
+return (): any | null => { return null }
 }
 
 })"
@@ -140,16 +140,16 @@ return "INLINE_RENDER"
 exports[`defineEmits w/ type (property syntax string literal) 1`] = `
 "export default defineComponent({
   emits: ["foo:bar"],
-  setup(__props: GenAnonymous) {
+  setup(__props): any | null {
 const __ins = getCurrentInstance()!;
-const _ctx = __ins.proxy as GenAnonymous;
+const _ctx = __ins.proxy;
 const _cache = __ins.renderCache;
 
     function emit(event: string, ...do_not_transform_spread: Array<any | null>) {
 __ins.emit(event, ...do_not_transform_spread)
 }
     
-return "INLINE_RENDER"
+return (): any | null => { return null }
 }
 
 })"
@@ -158,16 +158,16 @@ return "INLINE_RENDER"
 exports[`defineEmits w/ type (property syntax) 1`] = `
 "export default defineComponent({
   emits: ["foo", "bar"],
-  setup(__props: GenAnonymous) {
+  setup(__props): any | null {
 const __ins = getCurrentInstance()!;
-const _ctx = __ins.proxy as GenAnonymous;
+const _ctx = __ins.proxy;
 const _cache = __ins.renderCache;
 
     function emit(event: string, ...do_not_transform_spread: Array<any | null>) {
 __ins.emit(event, ...do_not_transform_spread)
 }
     
-return "INLINE_RENDER"
+return (): any | null => { return null }
 }
 
 })"
@@ -178,16 +178,16 @@ exports[`defineEmits w/ type (referenced exported function type) 1`] = `
     
 export default defineComponent({
   emits: ["foo", "bar"],
-  setup(__props: GenAnonymous) {
+  setup(__props): any | null {
 const __ins = getCurrentInstance()!;
-const _ctx = __ins.proxy as GenAnonymous;
+const _ctx = __ins.proxy;
 const _cache = __ins.renderCache;
 
     function emit(event: string, ...do_not_transform_spread: Array<any | null>) {
 __ins.emit(event, ...do_not_transform_spread)
 }
     
-return "INLINE_RENDER"
+return (): any | null => { return null }
 }
 
 })"
@@ -198,16 +198,16 @@ exports[`defineEmits w/ type (referenced function type) 1`] = `
     
 export default defineComponent({
   emits: ["foo", "bar"],
-  setup(__props: GenAnonymous) {
+  setup(__props): any | null {
 const __ins = getCurrentInstance()!;
-const _ctx = __ins.proxy as GenAnonymous;
+const _ctx = __ins.proxy;
 const _cache = __ins.renderCache;
 
     function emit(event: string, ...do_not_transform_spread: Array<any | null>) {
 __ins.emit(event, ...do_not_transform_spread)
 }
     
-return "INLINE_RENDER"
+return (): any | null => { return null }
 }
 
 })"
@@ -218,16 +218,16 @@ exports[`defineEmits w/ type (type alias) 1`] = `
     
 export default defineComponent({
   emits: ["foo", "bar"],
-  setup(__props: GenAnonymous) {
+  setup(__props): any | null {
 const __ins = getCurrentInstance()!;
-const _ctx = __ins.proxy as GenAnonymous;
+const _ctx = __ins.proxy;
 const _cache = __ins.renderCache;
 
     function emit(event: string, ...do_not_transform_spread: Array<any | null>) {
 __ins.emit(event, ...do_not_transform_spread)
 }
     
-return "INLINE_RENDER"
+return (): any | null => { return null }
 }
 
 })"
@@ -236,16 +236,16 @@ return "INLINE_RENDER"
 exports[`defineEmits w/ type (type literal w/ call signatures) 1`] = `
 "export default defineComponent({
   emits: ["foo", "bar", "baz"],
-  setup(__props: GenAnonymous) {
+  setup(__props): any | null {
 const __ins = getCurrentInstance()!;
-const _ctx = __ins.proxy as GenAnonymous;
+const _ctx = __ins.proxy;
 const _cache = __ins.renderCache;
 
     function emit(event: string, ...do_not_transform_spread: Array<any | null>) {
 __ins.emit(event, ...do_not_transform_spread)
 }
     
-return "INLINE_RENDER"
+return (): any | null => { return null }
 }
 
 })"
@@ -257,16 +257,16 @@ exports[`defineEmits w/ type (type references in union) 1`] = `
     
 export default defineComponent({
   emits: ["some", "emit", "change", "another"],
-  setup(__props: GenAnonymous) {
+  setup(__props): any | null {
 const __ins = getCurrentInstance()!;
-const _ctx = __ins.proxy as GenAnonymous;
+const _ctx = __ins.proxy;
 const _cache = __ins.renderCache;
 
     function emit(event: string, ...do_not_transform_spread: Array<any | null>) {
 __ins.emit(event, ...do_not_transform_spread)
 }
     
-return "INLINE_RENDER"
+return (): any | null => { return null }
 }
 
 })"
@@ -275,16 +275,16 @@ return "INLINE_RENDER"
 exports[`defineEmits w/ type (union) 1`] = `
 "export default defineComponent({
   emits: ["foo", "bar", "baz"],
-  setup(__props: GenAnonymous) {
+  setup(__props): any | null {
 const __ins = getCurrentInstance()!;
-const _ctx = __ins.proxy as GenAnonymous;
+const _ctx = __ins.proxy;
 const _cache = __ins.renderCache;
 
     function emit(event: string, ...do_not_transform_spread: Array<any | null>) {
 __ins.emit(event, ...do_not_transform_spread)
 }
     
-return "INLINE_RENDER"
+return (): any | null => { return null }
 }
 
 })"
@@ -293,16 +293,16 @@ return "INLINE_RENDER"
 exports[`defineEmits w/ type 1`] = `
 "export default defineComponent({
   emits: ["foo", "bar"],
-  setup(__props: GenAnonymous) {
+  setup(__props): any | null {
 const __ins = getCurrentInstance()!;
-const _ctx = __ins.proxy as GenAnonymous;
+const _ctx = __ins.proxy;
 const _cache = __ins.renderCache;
 
     function emit(event: string, ...do_not_transform_spread: Array<any | null>) {
 __ins.emit(event, ...do_not_transform_spread)
 }
     
-return "INLINE_RENDER"
+return (): any | null => { return null }
 }
 
 })"
@@ -313,16 +313,16 @@ exports[`defineEmits w/ type from normal script 1`] = `
     
 export default defineComponent({
   emits: ["foo", "bar"],
-  setup(__props: GenAnonymous) {
+  setup(__props): any | null {
 const __ins = getCurrentInstance()!;
-const _ctx = __ins.proxy as GenAnonymous;
+const _ctx = __ins.proxy;
 const _cache = __ins.renderCache;
 
     function emit(event: string, ...do_not_transform_spread: Array<any | null>) {
 __ins.emit(event, ...do_not_transform_spread)
 }
     
-return "INLINE_RENDER"
+return (): any | null => { return null }
 }
 
 })"

@@ -5,7 +5,7 @@ import { getCurrentPage } from '@dcloudio/uni-core'
 export const getElementById = defineSyncApi<GetElementById>(
   'getElementById',
   (id: string.IDString | string): UniElement | null => {
-    const page = getCurrentPage() as any
+    const page = (getCurrentPage() as unknown as UniPage).vm
     if (page == null) {
       return null
     }

@@ -7,7 +7,7 @@ import {
   normalizeTitleColor,
   once,
 } from '@dcloudio/uni-shared'
-import { normalizePath, removeExt } from '../utils'
+import { isNormalCompileTarget, normalizePath, removeExt } from '../utils'
 import { parseJson } from './json'
 import { isVueSfcFile } from '../vue/utils'
 import { parseVueRequest } from '../vite'
@@ -57,7 +57,7 @@ export const parsePagesJson = (
 ) => {
   const pagesFilename = path.join(inputDir, 'pages.json')
   if (!fs.existsSync(pagesFilename)) {
-    if (process.env.UNI_COMPILE_TARGET === 'uni_modules') {
+    if (!isNormalCompileTarget()) {
       return {
         pages: [],
         globalStyle: { navigationBar: {} },
@@ -459,18 +459,16 @@ const DEFAULT_TAB_BAR: Partial<UniApp.TabBarOptions> = {
   iconWidth: '24px',
   spacing: '3px',
   height: TABBAR_HEIGHT + 'px',
+  list: [],
 }
 
 function normalizeTabBar(
   tabBar: UniApp.TabBarOptions,
   platform: UniApp.PLATFORM
 ) {
-  const { list, midButton } = tabBar
-  if (!list || !list.length) {
-    return
-  }
+  const { midButton } = tabBar
   tabBar = extend({}, DEFAULT_TAB_BAR, tabBar)
-  list.forEach((item) => {
+  tabBar.list.forEach((item) => {
     if (item.iconPath) {
       item.iconPath = normalizeFilepath(item.iconPath)
     }
