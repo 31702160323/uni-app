@@ -13,24 +13,18 @@ var fs__default = /*#__PURE__*/_interopDefault(fs);
 
 var StandaloneExtApis = [
 	{
-		type: "extapi",
-		plugin: "uni-facialRecognitionVerify",
-		apis: [
-			"startFacialRecognitionVerify",
-			"getFacialRecognitionMetaInfo"
-		]
-	},
-	{
 		type: "provider",
 		plugin: "uni-oauth-huawei",
 		provider: "huawei",
-		service: "oauth"
+		service: "oauth",
+		version: "1.0.0"
 	},
 	{
 		type: "provider",
 		plugin: "uni-payment-alipay",
 		provider: "alipay",
-		service: "payment"
+		service: "payment",
+		version: "1.0.0"
 	}
 ];
 
@@ -92,7 +86,7 @@ function uniAppHarmonyPlugin() {
             };
         },
         async generateBundle(_, bundle) {
-            genAppHarmonyIndex(process.env.UNI_INPUT_DIR, uniCliShared.getCurrentCompiledUTSPlugins());
+            genAppHarmonyUniModules(process.env.UNI_INPUT_DIR, uniCliShared.getCurrentCompiledUTSPlugins());
             for (const key in bundle) {
                 const serviceBundle = bundle[key];
                 if (serviceBundle.code) {
@@ -170,26 +164,27 @@ function getRelatedModules(inputDir) {
     }
     return modules;
 }
-function genAppHarmonyIndex(inputDir, utsPlugins) {
+function genAppHarmonyUniModules(inputDir, utsPlugins) {
     const uniModulesDir = path__default.default.resolve(inputDir, 'uni_modules');
     const importCodes = [];
     const extApiCodes = [];
     const registerCodes = [];
     utsPlugins.forEach((plugin) => {
         const injects = uniCliShared.parseUniExtApi(path__default.default.resolve(uniModulesDir, plugin), plugin, true, 'app-harmony', 'arkts');
+        const hamonyPackageName = `@uni_modules/${plugin.toLowerCase()}`;
         if (injects) {
             Object.keys(injects).forEach((key) => {
                 const inject = injects[key];
                 if (Array.isArray(inject) && inject.length > 1) {
                     const apiName = inject[1];
-                    importCodes.push(`import { ${inject[1]} } from '@uni_modules/${plugin}'`);
+                    importCodes.push(`import { ${inject[1]} } from '${hamonyPackageName}'`);
                     extApiCodes.push(`uni.${apiName} = ${apiName}`);
                 }
             });
         }
         else {
             const ident = uniCliShared.camelize(plugin);
-            importCodes.push(`import * as ${ident} from '@uni_modules/${plugin}'`);
+            importCodes.push(`import * as ${ident} from '${hamonyPackageName}'`);
             registerCodes.push(`uni.registerUTSPlugin('uni_modules/${plugin}', ${ident})`);
         }
     });
@@ -197,21 +192,26 @@ function genAppHarmonyIndex(inputDir, utsPlugins) {
     const relatedModules = getRelatedModules(inputDir);
     const projectDeps = [];
     relatedModules.forEach((module) => {
+        const harmonyModuleName = `@uni_modules/${module.toLowerCase()}`;
         if (utsPlugins.has(module)) {
             projectDeps.push({
-                moduleSpecifier: `@uni_modules/${module}`,
+                moduleSpecifier: harmonyModuleName,
                 plugin: module,
                 source: 'local',
             });
         }
         else {
-            projectDeps.push({
-                moduleSpecifier: `@uni_modules/${module}`,
-                plugin: module,
-                source: 'ohpm',
-            });
+            const matchedStandaloneExtApi = StandaloneExtApis.find((item) => item.plugin === module);
+            if (matchedStandaloneExtApi) {
+                projectDeps.push({
+                    moduleSpecifier: harmonyModuleName,
+                    plugin: module,
+                    source: 'ohpm',
+                    version: matchedStandaloneExtApi.version,
+                });
+            }
         }
-        importCodes.push(`import '@uni_modules/${module}'`);
+        importCodes.push(`import '${harmonyModuleName}'`);
     });
     const importProviderCodes = [];
     const registerProviderCodes = [];
@@ -220,9 +220,10 @@ function genAppHarmonyIndex(inputDir, utsPlugins) {
         return {
             service: provider.service,
             name: provider.name,
-            moduleSpecifier: `@uni_modules/${provider.plugin}`,
+            moduleSpecifier: `@uni_modules/${provider.plugin.toLowerCase()}`,
             plugin: provider.plugin,
             source: 'local',
+            version: undefined,
         };
     });
     StandaloneExtApis.filter((item) => {
@@ -235,9 +236,10 @@ function genAppHarmonyIndex(inputDir, utsPlugins) {
         allProviders.push({
             service,
             name: provider,
-            moduleSpecifier: `@uni_modules/${extapi.plugin}`,
+            moduleSpecifier: `@uni_modules/${extapi.plugin.toLowerCase()}`,
             plugin: extapi.plugin,
             source: 'ohpm',
+            version: extapi.version,
         });
     });
     relatedProviders.forEach((relatedProvider) => {

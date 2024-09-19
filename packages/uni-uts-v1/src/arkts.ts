@@ -13,6 +13,7 @@ import { sync } from 'fast-glob'
 interface ArkTSCompilerOptions {
   isX?: boolean
   isExtApi?: boolean
+  isOhpmPackage?: boolean
   transform?: {
     uniExtApiProviderName?: string
     uniExtApiProviderService?: string
@@ -63,6 +64,7 @@ export function getArkTSAutoImports(): AutoImportOptions {
         ['IUTSObject'],
         ['UTSObject'],
         ['UTSJSONObject'],
+        ['SourceError'],
       ],
     },
     require('../lib/arkts/ext-api-export.json')
@@ -93,6 +95,8 @@ function parsePackageDeps(
       result[key] = packageRelativePath.startsWith('.')
         ? packageRelativePath
         : './' + packageRelativePath
+    } else {
+      result[key] = value
     }
   }
   return result
@@ -102,7 +106,7 @@ export async function compileArkTSExtApi(
   rootDir: string,
   pluginDir: string,
   outputDir: string,
-  { isExtApi, transform }: ArkTSCompilerOptions
+  { isExtApi, isOhpmPackage = false, transform }: ArkTSCompilerOptions
 ): Promise<CompileResult | void> {
   const filename = resolveAppHarmonyIndexFile(pluginDir)
   if (!filename) {
@@ -113,7 +117,15 @@ export async function compileArkTSExtApi(
   const pluginId = path.basename(pluginDir)
   const outputUniModuleDir = outputDir
 
-  const autoImportExternals = getArkTSAutoImports()
+  let autoImportExternals = getArkTSAutoImports()
+
+  if (isOhpmPackage) {
+    // 只保留uni-app-runtime
+    autoImportExternals = {
+      '@dcloudio/uni-app-runtime':
+        autoImportExternals['@dcloudio/uni-app-runtime'],
+    }
+  }
 
   const buildOptions: UTSBundleOptions = {
     hbxVersion: process.env.HX_Version || process.env.UNI_COMPILER_VERSION,
@@ -152,7 +164,7 @@ export async function compileArkTSExtApi(
     'utssdk/app-harmony/config.json'
   )
 
-  const harmonyPackageName = '@uni_modules/' + pluginId
+  const harmonyPackageName = '@uni_modules/' + pluginId.toLowerCase()
   const harmonyModuleName = harmonyPackageName
     .replace(/@/g, '')
     .replace(/\//g, '__')
@@ -170,15 +182,28 @@ export async function compileArkTSExtApi(
   }
 
   // generate oh-package.json5
+  let version = '1.0.0'
+  const packageJsonPath = path.resolve(pluginDir, 'package.json')
+  if (fs.existsSync(packageJsonPath)) {
+    const packageJson = fs.readJSONSync(packageJsonPath)
+    version = packageJson.version || '1.0.0'
+  }
   const ohPackageJson: Record<string, any> = {
     name: harmonyPackageName,
-    version: '1.0.0',
+    version,
     description: '',
     main: 'utssdk/app-harmony/index.ets',
     author: '',
     license: '',
     dependencies: {},
   }
+
+  if (isOhpmPackage) {
+    ohPackageJson.description = 'uni-app runtime package'
+    ohPackageJson.author = 'DCloud'
+    ohPackageJson.license = 'Apache-2.0'
+  }
+
   if (fs.existsSync(configFilePath)) {
     const config = fs.readJSONSync(configFilePath)
     ohPackageJson.dependencies = parsePackageDeps(config.dependencies)
@@ -305,7 +330,7 @@ export function resolveAppHarmonyUniModulesRootDir() {
   if (process.env.UNI_APP_HARMONY_PROJECT_PATH) {
     return path.resolve(process.env.UNI_APP_HARMONY_PROJECT_PATH, 'uni_modules')
   }
-  return path.resolve(process.env.UNI_OUTPUT_DIR, 'uni_modules_packages')
+  return path.resolve(process.env.UNI_OUTPUT_DIR, 'uni_modules')
 }
 
 export function resolveAppHarmonyUniModuleDir(pluginId: string) {
@@ -319,5 +344,5 @@ export function resolveAppHarmonyUniModulesEntryDir() {
       'entry/src/main/ets/uni_modules'
     )
   }
-  return path.resolve(process.env.UNI_OUTPUT_DIR, 'uni_modules_packages')
+  return path.resolve(process.env.UNI_OUTPUT_DIR, 'uni_modules')
 }

@@ -1,22 +1,16 @@
 [
   {
-    "type": "extapi",
-    "plugin": "uni-facialRecognitionVerify",
-    "apis": [
-      "startFacialRecognitionVerify",
-      "getFacialRecognitionMetaInfo"
-    ]
-  },
-  {
     "type": "provider",
     "plugin": "uni-oauth-huawei",
     "provider": "huawei",
-    "service": "oauth"
+    "service": "oauth",
+    "version": "1.0.0"
   },
   {
     "type": "provider",
     "plugin": "uni-payment-alipay",
     "provider": "alipay",
-    "service": "payment"
+    "service": "payment",
+    "version": "1.0.0"
   }
 ]

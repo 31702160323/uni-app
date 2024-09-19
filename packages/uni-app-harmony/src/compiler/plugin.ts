@@ -87,7 +87,7 @@ export function uniAppHarmonyPlugin(): UniVitePlugin {
       }
     },
     async generateBundle(_, bundle) {
-      genAppHarmonyIndex(
+      genAppHarmonyUniModules(
         process.env.UNI_INPUT_DIR,
         getCurrentCompiledUTSPlugins()
       )
@@ -113,7 +113,7 @@ export function uniAppHarmonyPlugin(): UniVitePlugin {
 /**
  * extapi分为如下几种
  * 1. 内部extapi，编译到uni.api.ets内
- * 2. 内部provider，编译到uni.api.ets内
+ * 2. 内部provider，编译到uni.api.ets内。目前不存在这种场景，所有provider都是单独的ohpm包
  * 3. 内部extapi，发布到ohpm
  * 4. 内部provider，发布到ohpm
  * 5. 用户自定义extapi
@@ -188,7 +188,7 @@ function getRelatedModules(inputDir: string): string[] {
   return modules
 }
 
-function genAppHarmonyIndex(inputDir: string, utsPlugins: Set<string>) {
+function genAppHarmonyUniModules(inputDir: string, utsPlugins: Set<string>) {
   const uniModulesDir = path.resolve(inputDir, 'uni_modules')
   const importCodes: string[] = []
   const extApiCodes: string[] = []
@@ -201,20 +201,21 @@ function genAppHarmonyIndex(inputDir: string, utsPlugins: Set<string>) {
       'app-harmony',
       'arkts'
     )
+    const hamonyPackageName = `@uni_modules/${plugin.toLowerCase()}`
     if (injects) {
       Object.keys(injects).forEach((key) => {
         const inject = injects[key]
         if (Array.isArray(inject) && inject.length > 1) {
           const apiName = inject[1]
           importCodes.push(
-            `import { ${inject[1]} } from '@uni_modules/${plugin}'`
+            `import { ${inject[1]} } from '${hamonyPackageName}'`
           )
           extApiCodes.push(`uni.${apiName} = ${apiName}`)
         }
       })
     } else {
       const ident = camelize(plugin)
-      importCodes.push(`import * as ${ident} from '@uni_modules/${plugin}'`)
+      importCodes.push(`import * as ${ident} from '${hamonyPackageName}'`)
       registerCodes.push(
         `uni.registerUTSPlugin('uni_modules/${plugin}', ${ident})`
       )
@@ -228,23 +229,31 @@ function genAppHarmonyIndex(inputDir: string, utsPlugins: Set<string>) {
     moduleSpecifier: string
     plugin: string
     source: 'local' | 'ohpm'
+    version?: string
   }[] = []
 
   relatedModules.forEach((module) => {
+    const harmonyModuleName = `@uni_modules/${module.toLowerCase()}`
     if (utsPlugins.has(module)) {
       projectDeps.push({
-        moduleSpecifier: `@uni_modules/${module}`,
+        moduleSpecifier: harmonyModuleName,
         plugin: module,
         source: 'local',
       })
     } else {
-      projectDeps.push({
-        moduleSpecifier: `@uni_modules/${module}`,
-        plugin: module,
-        source: 'ohpm',
-      })
+      const matchedStandaloneExtApi = StandaloneExtApis.find(
+        (item) => item.plugin === module
+      )
+      if (matchedStandaloneExtApi) {
+        projectDeps.push({
+          moduleSpecifier: harmonyModuleName,
+          plugin: module,
+          source: 'ohpm',
+          version: matchedStandaloneExtApi.version,
+        })
+      }
     }
-    importCodes.push(`import '@uni_modules/${module}'`)
+    importCodes.push(`import '${harmonyModuleName}'`)
   })
 
   const importProviderCodes: string[] = []
@@ -254,9 +263,10 @@ function genAppHarmonyIndex(inputDir: string, utsPlugins: Set<string>) {
     return {
       service: provider.service,
       name: provider.name,
-      moduleSpecifier: `@uni_modules/${provider.plugin}`,
+      moduleSpecifier: `@uni_modules/${provider.plugin.toLowerCase()}`,
       plugin: provider.plugin,
       source: 'local',
+      version: undefined as undefined | string,
     }
   })
 
@@ -270,9 +280,10 @@ function genAppHarmonyIndex(inputDir: string, utsPlugins: Set<string>) {
     allProviders.push({
       service,
       name: provider,
-      moduleSpecifier: `@uni_modules/${extapi.plugin}`,
+      moduleSpecifier: `@uni_modules/${extapi.plugin.toLowerCase()}`,
       plugin: extapi.plugin,
       source: 'ohpm',
+      version: extapi.version,
     })
   })
 
